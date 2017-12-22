@@ -1,0 +1,4 @@
+[submodule "sfb_dfm_utils"]
+	path = sfb_dfm_utils
+	url = https://github.com/rustychris/sfb_dfm_utils.git
+	branch = master
