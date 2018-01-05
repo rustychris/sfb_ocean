@@ -96,7 +96,11 @@ from stompy.spatial import wkb2shp
 
 land_shp=wkb2shp.shp2geom('/opt/data/GIS/shorelines/noaa_med_res/land_polygon-utm10.shp')
 land_geom=land_shp['geom'][0] # first is the mainland
-# plot_wkb.plot_wkb(land_geom,ax=ax)
+
+# This is a hacky way of removing inlet-like features below
+# 800m wide.  It leaves some cruft, but accomplishes the main task
+# of omitting Tomales Bay
+land_smooth=land_geom.buffer(800).buffer(-800)
 
 ##
 
@@ -107,7 +111,7 @@ def splice_shore(roms_pnt,dfm_pnt):
     # May have to do some smoothing on the shoreline before this step
     # Need to extract a linestring from the shoreline which joins
     # those two points in the grid.
-    shore_string=np.array(land_geom.exterior)
+    shore_string=np.array(land_smooth.exterior)
 
     roms_best=np.argmin( utils.dist( shore_string,roms_pnt))
     dfm_best =np.argmin( utils.dist( shore_string,dfm_pnt))
@@ -145,13 +149,6 @@ if 1: # splice in real shoreline between the two grids
     # Southern side:
     splice_shore(roms_pnt=(552462, 4135376),
                  dfm_pnt=(542700., 4152880.))
-        
-if 0: # OLD - join them with a straight line:
-    for roms_pnt,sfb_pnt in zip( roms_tie_points,
-                                 matching_points):
-        nA=g_merge.select_nodes_nearest(roms_pnt)
-        nB=g_merge.select_nodes_nearest(sfb_pnt)
-        g_merge.add_edge(nodes=[nA,nB])
 
 ##
 
@@ -172,30 +169,37 @@ seed_point=np.array(seed_point)
 nodes=g_merge.enclosing_nodestring(seed_point,5000)
 
 ## 
-
-plt.figure(2).clf()
-fig,ax=plt.subplots(num=2)
-
-g_merge.plot_edges(ax=ax,color='k',lw=0.8)
-
 xy_shore=g_merge.nodes['x'][nodes]
 
+if 1:
+    plt.figure(2).clf()
+    fig,ax=plt.subplots(num=2)
 
-plot_wkb.plot_wkb(no_mans_land,facecolor='r',alpha=0.3)
-ax.plot(xy_shore[:,0],
-        xy_shore[:,1],
-        'r-')
+    g_merge.plot_edges(ax=ax,color='k',lw=0.8)
+
+    plot_wkb.plot_wkb(no_mans_land,facecolor='r',alpha=0.3)
+    ax.plot(xy_shore[:,0],
+            xy_shore[:,1],
+            'r-')
 
 ##
 
 # Construct a scale based on existing spacing
 # But only do this for edges that are part of one of the original grids
-seg_starts=xy_shore
-seg_ends=xy_shore[ (np.arange(len(xy_shore))+1)%(len(xy_shore)) ]
+g_merge.edge_to_cells() # update edges['cells']
+sample_xy=[]
+sample_scale=[]
+ec=g_merge.edges_center()
 
-sample_xy=0.5*(seg_starts + seg_ends)
-sample_scale=utils.dist(seg_starts - seg_ends)
-
+for na,nb in utils.circular_pairs(nodes):
+    j=g_merge.nodes_to_edge([na,nb])
+    if np.any( g_merge.edges['cells'][j] >= 0 ):
+        sample_xy.append(ec[j])
+        sample_scale.append( utils.dist(g_merge.nodes['x'][na],
+                                        g_merge.nodes['x'][nb]) )
+sample_xy=np.array(sample_xy)
+sample_scale=np.array(sample_scale)
+ 
 apollo=field.PyApolloniusField(X=sample_xy,F=sample_scale)
 
 ## 
@@ -209,8 +213,6 @@ six.moves.reload_module(cgal_line_walk)
 six.moves.reload_module(shadow_cdt)
 six.moves.reload_module(front)
 
-
-
 grid_to_pave=unstructured_grid.UnstructuredGrid(max_sides=6)
 
 AT=front.AdvancingTriangles(grid=grid_to_pave)
@@ -221,51 +223,64 @@ AT.scale=field.ConstantField(50000)
 
 AT.initialize_boundaries()
 
+##
 AT.grid.nodes['fixed'][:]=AT.RIGID
 AT.grid.edges['fixed'][:]=AT.RIGID
 
-# But the two stitch edges are not rigid:
-for roms_pnt,sfb_pnt in zip( roms_tie_points,
-                             matching_points):
-    nA=AT.grid.select_nodes_nearest(roms_pnt)
-    nB=AT.grid.select_nodes_nearest(sfb_pnt)
-    j=AT.grid.nodes_to_edge(nA,nB)
-    AT.grid.edges['fixed'][j]=0
+# Loop through the nodes, and if it doesn't line up exactly with
+# a node in one of the source grids, then it becomes HINT
+src_grids=[g_sfb,g_roms]
+
+for n in AT.grid.valid_node_iter():
+    for src_grid in src_grids:
+        n_src=src_grid.select_nodes_nearest(AT.grid.nodes['x'][n])
+        delta=utils.dist( src_grid.nodes['x'][n_src], AT.grid.nodes['x'][n] )
+        if delta<0.1: # should be 0.0
+            break # we get a match
+    else: # nobody matched
+        # It should be a HINT
+        AT.grid.nodes['fixed'][n]=AT.HINT
+        # And any edges it participates in should not be RIGID either.
+        for j in AT.grid.node_to_edges(n):
+            AT.grid.edges['fixed'][j]=AT.UNSET
 
 AT.scale=apollo    
 
-# What is the current status of who will or won't resample these things?
-
-# plt.figure(10).clf()
-# fig,ax=plt.subplots(num=10)
-# AT.grid.plot_edges(values=AT.grid.edges['fixed'],cmap='RdYlGn')
-# AT.grid.plot_nodes(values=AT.grid.nodes['fixed'],cmap='jet',
-#                    labeler=lambda i,r: str(i))
-
 ##
+
 AT.loop()
 AT.grid.renumber()
 
 # Comes out at 3607 cells.  Not too bad.
+# New shoreline, 3410.
 
 ##
 
-## 
-#for _ in range(10):
-if 1:
-    AT.loop(100)
+plt.figure(2).clf()
+fig,ax=plt.subplots(num=2)
+
+for _ in range(10):
+    AT.loop(1)
     ax.cla()
     AT.grid.plot_edges(lw=0.6)
-
+    plt.pause(0.01)    
 ##
+
 ax.cla()
 AT.grid.plot_edges(lw=0.6)
 g_sfb.plot_edges(lw=0.6,color='orange')
 g_roms.plot_edges(lw=0.6,color='green')
 
 ##
+
+fig=plt.gcf()
+
+fig.set_size_inches( (8,10), forward=True)
 ax.xaxis.set_visible(0)
 ax.yaxis.set_visible(0)
+ax.set_position([0,0,1,1])
+ax.axis((355703.81105863693, 620522.73590478697, 4001473.0691157952, 4321241.9208675213))
+## 
 fig.savefig('spliced-grids.pdf')
 fig.savefig('spliced-grids.png',dpi=200)
 
@@ -304,7 +319,7 @@ g_complete.plot_nodes(values=g_complete.nodes['src'])
 
 ##
 
-g_complete.write_ugrid('spliced_grids_00.nc')
+g_complete.write_ugrid('spliced_grids_01.nc')
 
 ##
 
@@ -334,14 +349,29 @@ g_complete.add_node_field('depth',splice_bathy)
 
 ##
 
-plt.clf()
-# g_complete.plot_edges(lw=0.4,color='k')
-ncoll=g_complete.plot_nodes(values=splice_bathy)
-ncoll.set_clim([-40,0])
+g_complete.write_ugrid('spliced_grids_01_bathy.nc')
+
+dfm_grid.write_dfm(g_complete,'spliced_grids_01_net.nc')
 
 ##
 
 plt.clf()
-g_complete.contourf_node_values( np.sqrt( (-g_complete.nodes['depth']).clip(0,np.inf)) ,
+g_complete.contourf_node_values( (-g_complete.nodes['depth']).clip(0,np.inf)**0.2 ,
                                  30,
                                  cmap='jet',extend='both')
+g_complete.plot_edges(lw=0.5,color='k',alpha=0.3)
+
+## 
+fig=plt.gcf()
+ax=plt.gca()
+    
+fig.set_size_inches( (8,10), forward=True)
+ax.xaxis.set_visible(0)
+ax.yaxis.set_visible(0)
+ax.set_position([0,0,1,1])
+ax.axis((355703.81105863693, 620522.73590478697, 4001473.0691157952, 4321241.9208675213))
+
+##
+
+fig.savefig('spliced_bathy_01.pdf')
+fig.savefig('spliced_bathy_01.png',dpi=200)
