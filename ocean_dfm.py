@@ -43,7 +43,8 @@ utm2ll=proj_utils.mapper('EPSG:26910','WGS84')
 # short_test_04: Adding COAMPS wind
 # short_test_05: Convert to more complete DFM script
 # short_test_06: Try 3D, 10 layers
-run_name='short_test_06'
+# short_text_07: ragged boundary
+run_name='short_test_07'
 
 run_base_dir=os.path.join('runs',run_name)
 os.path.exists(run_base_dir) or os.makedirs(run_base_dir)
@@ -54,6 +55,8 @@ mdu['geometry','Kmx']=20
 mdu['geometry','SigmaGrowthFactor']=1 
 mdu['geometry','StretchType']=1 # user defined 
 # These must sum exactly to 100.
+# There is currently a limitation in MDUFile that it does not keep
+# sections together, which causes problems
 mdu['geometry','StretchCoef']="8 8 7 7 6 6 6 6 5 5 5 5 5 5 5 5 2 2 1 1"
 
 run_start=ref_date=np.datetime64('2017-08-10')
@@ -72,16 +75,29 @@ from sfb_dfm_utils import ca_roms, coamps
 # Get the ROMS inputs:
 ca_roms_files = ca_roms.fetch_ca_roms(run_start,run_stop)
 
-## 
-ugrid_file='derived/matched_grid_v00.nc'
+##
+if 0: # rectangular subset
+    ugrid_file='derived/matched_grid_v00.nc'
 
-if not os.path.exists(ugrid_file):
-    g=ca_roms.extract_roms_subgrid()
-    ca_roms.add_coastal_bathy(g)
-    g.write_ugrid(ugrid_file)
-else:
-    g=unstructured_grid.UnstructuredGrid.from_ugrid(ugrid_file)
+    if not os.path.exists(ugrid_file):
+        g=ca_roms.extract_roms_subgrid()
+        ca_roms.add_coastal_bathy(g)
+        g.write_ugrid(ugrid_file)
+    else:
+        g=unstructured_grid.UnstructuredGrid.from_ugrid(ugrid_file)
+
+else: # ragged edge
+    ugrid_file='derived/matched_grid_v01.nc'
     
+    if not os.path.exists(ugrid_file):
+        six.moves.reload_module(ca_roms)
+        poly=wkb2shp.shp2geom('grid-poly-v00.shp')[0]['geom']
+        g=ca_roms.extract_roms_subgrid_poly(poly)
+        ca_roms.add_coastal_bathy(g)
+        g.write_ugrid(ugrid_file)
+    else:
+        g=unstructured_grid.UnstructuredGrid.from_ugrid(ugrid_file)
+        
 ## 
 
 # Identify ocean boundary edges
@@ -136,21 +152,6 @@ otps_v=otps.reconstruct(v_harmonics,otps_times)
 otps_u.result[:] *= 0.01 
 otps_v.result[:] *= 0.01 
 
-## ----------
-
-os.path.exists(old_bc_fn) and os.unlink(old_bc_fn)
-
-# for adding in MSL => NAVD88 correction.  Just dumb luck that it's 1.0
-dfm_zeta_offset=1.0
-
-# average tidal prediction across boundary at start of simulation
-# plus above DC offset
-zeta_ic = dfm_zeta_offset + np.interp(utils.to_dnum(run_start),
-                                      utils.to_dnum(otps_water_level.time),
-                                      otps_water_level.result.mean(dim='site'))
-mdu['geometry','WaterLevIni'] = zeta_ic
-
-
 ##
 
 # Pre-extract some fields from the ROMS data
@@ -178,7 +179,20 @@ for ca_roms_file in ca_roms_files:
     
 roms_at_boundary=xr.concat(extracted,dim='time')
 
-##
+## ----------
+
+os.path.exists(old_bc_fn) and os.unlink(old_bc_fn)
+
+# for adding in MSL => NAVD88 correction.  Just dumb luck that it's 1.0
+dfm_zeta_offset=1.0
+
+# average tidal prediction across boundary at start of simulation
+# plus above DC offset
+zeta_ic = dfm_zeta_offset + np.interp(utils.to_dnum(run_start),
+                                      utils.to_dnum(otps_water_level.time),
+                                      otps_water_level.result.mean(dim='site'))
+mdu['geometry','WaterLevIni'] = zeta_ic
+
 
 def write_pli(src_name,j,suffix):
     seg=g.nodes['x'][ g.edges['nodes'][j] ]
@@ -264,9 +278,10 @@ def write_t3d(da,suffix,feat_suffix,edge_depth):
 
 
 for ji,j in enumerate(boundary_edges):
-    if j in [99]:
-        print("EDGE %d might be a bad apple.  Skip"%j)
-        continue
+    # Old workaround attempt
+    # if j in [99]:
+    #     print("EDGE %d might be a bad apple.  Skip"%j)
+    #     continue
     
     src_name='oce%05d'%j
     print(src_name)
@@ -298,7 +313,8 @@ for ji,j in enumerate(boundary_edges):
             riemann=0.5*(riemann + zeta_ic + np.sqrt(np.abs(depth)/9.8)*veloc_normal)
         
     if 1: # ROMS:
-        if 0: 
+        if 0:
+            assert False # this stanza is old
             water_level=src.zeta.isel(lat=lat_idx_out,lon=lon_idx_out)
     
             # 36h cutoff with 6h data.
@@ -307,13 +323,22 @@ for ji,j in enumerate(boundary_edges):
             water_level.values[:] = filters.lowpass(water_level.values,
                                                     cutoff=36.,order=4,dt=6)
         if 1: # salinity
-            # HERE - need to extract this from the individual files
-            salinity_3d=roms_at_boundary.isel(boundary=ji).salt
-            salinity=roms_davg(salinity_3d)
-            
-            salinity.values[:] = filters.lowpass(salinity.values,
-                                                 cutoff=36.,order=4,dt=6)
-            salinity.name='salinity'
+            if 1: # proper spatial variation:
+                salinity_3d=roms_at_boundary.isel(boundary=ji).salt
+                for zi in range(len(salinity_3d.depth)):
+                    salinity_3d.values[:,zi] = filters.lowpass(salinity_3d.values[:,zi],
+                                                               cutoff=36,order=4,dt=6)
+            else: # spatially constant
+                salinity_3d=roms_at_boundary.salt.mean(dim='boundary')
+                for zi in range(len(salinity_3d.depth)):
+                    salinity_3d.values[:,zi] = filters.lowpass(salinity_3d.values[:,zi],
+                                                               cutoff=36,order=4,dt=6)
+                
+            if 0:
+                salinity=roms_davg(salinity_3d)
+                salinity.values[:] = filters.lowpass(salinity.values,
+                                                     cutoff=36.,order=4,dt=6)
+                salinity.name='salinity'
         
     assert np.all( np.isfinite(water_level.values) )
 
@@ -331,10 +356,15 @@ for ji,j in enumerate(boundary_edges):
         forcing_data.append( ('salinitybnd',salinity_3d,'_salt') )
 
     if 1: # riemann only
-        # This works pretty well, good agreement at Point Reyes
+        # This works pretty well, good agreement at Point Reyes.
         forcing_data.append( ('riemannbnd',riemann,'_rmn') )
-    if 0:  # water level only
-        forcing_data.append( ('waterlevelbnd',water_level,'_ssh') )
+
+    if 0: # Riemann only in shallow areas:
+        if depth<-200:
+            forcing_data.append( ('waterlevelbnd',water_level,'_ssh') )
+        else:
+            forcing_data.append( ('riemannbnd',riemann,'_rmn') )
+            
 
     for quant,da,suffix in forcing_data:
         with open(old_bc_fn,'at') as fp:
@@ -352,22 +382,57 @@ for ji,j in enumerate(boundary_edges):
         elif da.ndim==2:
             write_t3d(da,suffix,feat_suffix,g.edges['edge_depth'][j])
             
+    if 1: # advected velocity is 0
+        quant='uxuyadvectionvelocitybnd'
+        suffix='_uv'
+        
+        with open(old_bc_fn,'at') as fp:
+            lines=["QUANTITY=%s"%quant,
+                   "FILENAME=%s%s.pli"%(src_name,suffix),
+                   "FILETYPE=9",
+                   "METHOD=3",
+                   "OPERAND=O",
+                   "\n"]
+            fp.write("\n".join(lines))
+        feat_suffix=write_pli(src_name,j,suffix)
+            
+        times=np.array( [run_start-np.timedelta64(1,'D'),
+                         run_stop+np.timedelta64(1,'D')] )
+        da=xr.DataArray( np.zeros( (len(times),2) ),
+                         dims=['time','two'],
+                         coords={'time':times} )
+        write_tim(da,suffix,feat_suffix)
 
+            
 ## 
 
 if 1:
-    mdu['geometry','NetFile'] = 'matched_grid_v00_net.nc'
+    mdu['geometry','NetFile'] = os.path.basename(ugrid_file).replace('.nc','_net.nc')
     dfm_grid.write_dfm(g,os.path.join(run_base_dir,mdu['geometry','NetFile']),
                        overwrite=True)
-## 
 
-# This step is pretty slow
+# This step is pretty slow the first time around.
 coamps.add_coamps_to_mdu(mdu,run_base_dir,g,use_existing=True)
 
-##
+six.moves.reload_module(ca_roms)
+map_fn=os.path.join(run_base_dir,
+                    'DFM_OUTPUT_%s'%run_name,
+                    '%s_map.nc'%run_name)
+ic_fn=os.path.join(run_base_dir,'initial_conditions_map.nc')
+if os.path.exists(map_fn):
+    if not os.path.exists(ic_fn):
+        snap=src.isel(time=[0])
+        
+        ic_map=ca_roms.set_ic_from_map_output(snap,
+                                              map_file=map_fn,
+                                              output_fn=ic_fn)
 
-mdu['restart','RestartFile']='../../initial_conditions_map.nc'
-mdu['restart','RestartDateTime'] ="201708100001"
+    mdu['restart','RestartFile']='initial_conditions_map.nc'
+    # Had some issues when this timestamp exactly lined up with the reference date.
+    # adding 1 minute works around that, with a minor warning that these don't match
+    # exactly
+    restart_time=utils.to_datetime(ic_map.time.values[0] + np.timedelta64(60,'s')).strftime('%Y%m%d%H%M')
+    mdu['restart','RestartDateTime']=restart_time
 
 ##
 
@@ -409,78 +474,117 @@ ax.plot(all_salt,all_depth,'k.')
 
 ##
 
-# Using a restart file.
-# Ran into issues using a proper restart file, but works okay to read in
-# a map file.
-# So read one step of a map file
+##
+
+# What is going on with turbulence at the inflow boundary?
+ds=xr.open_dataset('runs/short_test_07/DFM_OUTPUT_short_test_07/short_test_07_map.nc')
+
+##
+
+dsg=dfm_grid.DFMGrid(ds)
+
+##
+# wdim=20: all zero.
+
+nut_vals=ds.vicwwu.isel(time=225,wdim=19)
+unorm_vals=ds.unorm.isel(time=225,laydim=-1)
 
 
-def set_ic_from_map_output(map_file,output_fn='initial_conditions_map.nc'):
-    """
-    copy the strucutre of the map_file at one time step, but overwrite
-    fields with ROMS snapshot data
-    """
-    map_in=xr.open_dataset(map_file)
-
-    map_out=map_in.isel(time=[0])
-    # there are some name clashes -- drop any coordinates attributes
-
-    ## 
-    for dv in map_out.data_vars:
-        if 'coordinates' in map_out[dv].attrs:
-            del map_out[dv].attrs['coordinates']
+plt.figure(12).clf()
+fig,axs=plt.subplots(1,2,sharex=True,sharey=True,num=12)
 
 
-    ##
-    # Overwrite salinity with data from ROMS:
+# This doesn't line up correctly -- some kind of stride issue
+#ecoll=dsg.plot_edges(values=np.log10(nut_vals.values.clip(1e-6,1)))
+#plt.colorbar(ecoll)
 
-    # DFM reorders the cells, so read it back in.
-    g_map=dfm_grid.DFMGrid(map_out)
-    g_map_cc=g_map.cells_centroid()
-    g_map_ll=utm2ll(g_map_cc)
+for ax in axs:
+    dsg.plot_edges(lw=0.4,color='k',ax=ax)
+    
+scat=axs[0].scatter( ds.FlowLink_xu.values, ds.FlowLink_yu.values,
+                     40,np.log10(nut_vals.values.clip(1e-6,1)))
+plt.colorbar(scat,label="log10(nu_t)",ax=axs[0])
 
-    ## 
-    dlon=np.median(np.diff(snap.lon.values))
-    dlat=np.median(np.diff(snap.lat.values))
-    for c in g_map.valid_cell_iter():
-        if c%1000==0:
-            print("%d/%d"%(c,g_map.Ncells()))
-        loni=utils.nearest(snap.lon.values%360,g_map_ll[c,0]%360)
-        lati=utils.nearest(snap.lat.values,g_map_ll[c,1])
-        lon_err=(snap.lon.values[loni]%360 - g_map_ll[c,0]%360.0)/dlon
-        lat_err=(snap.lat.values[lati] - g_map_ll[c,1])/dlat
+scat2=axs[1].scatter( ds.FlowLink_xu.values, ds.FlowLink_yu.values,
+                      40,unorm_vals.values,
+                      vmin=-4,vmax=4,cmap='seismic')
+plt.colorbar(scat2,label="u_norm",ax=axs[1])
+axs[0].axis((404067.70525705366, 491720.227436808, 4006958.0484274048, 4171269.3235576618))
+# 
 
-        if abs(lon_err) > 1 or abs(lat_err)>1:
-            print("skip cell %d"%c)
-            continue
+## ----
 
-        roms_salt=snap.salt.isel(lat=lati,lon=loni,time=0).values[::-1]
-        roms_z=-snap.depth.values[::-1]
-        valid=np.isfinite(roms_salt)
-        roms_salt=roms_salt[valid]
-        roms_z=roms_z[valid]
+# Write spatially-variable horizontal eddy viscosity field
+# Triangulation, with large scale value of 10, and 1000 near
+# the boundary.
 
-        bl=map_out.FlowElem_bl.isel(nFlowElem=c).values # positive up from the z datum
-        wd=map_out.waterdepth.isel(nFlowElem=c,time=0).values
-        sigma=map_out.LayCoord_cc.values
-        dfm_z=bl + wd*sigma
-
-        dfm_salt=np.interp(dfm_z,roms_z,roms_salt)
-        sel_time=xr.DataArray([0],dims=['time'])
-        sel_cell=xr.DataArray([c],dims=['nFlowElem'])
-        map_out.sa1[sel_time,sel_cell]=dfm_salt
+from shapely import geometry
+from shapely.ops import cascaded_union
+from stompy.plot import plot_wkb
+from stompy.spatial import linestring_utils
 
 
-    # Does the map timestamp have to match what's in the mdu?
-    # Yes.
-    map_out.to_netcdf(output_fn,format='NETCDF3_64BIT')
-    return map_out
+obc_centers=g.edges_center()[boundary_edges]
 
-map_file='runs/short_test_06/DFM_OUTPUT_short_test_06/short_test_06_map.nc'
-map_out=set_ic_from_map_output(map_file,'initial_conditions_map.nc')
+obc_visc=1000
+bg_visc=10
+sponge_L=25000 # [m] roughly 8 cells
 
-# before, when choosing a later time step, it worked okay to encode the datetime
-# in the mdu as YYYYMMDDHHMM
-# but when using the first timestep, that failed until I requested instead
-# 201708100001
-# which DFM complains about but seems to use without any trouble.
+sample_sets=[ np.c_[obc_centers[:,0],obc_centers[:,1],obc_visc*np.ones(len(obc_centers))] ]
+
+
+circs=[geometry.Point(xy).buffer(sponge_L)
+       for xy in obc_centers]
+obc_buff=cascaded_union(circs).boundary
+obc_buff_pnts=np.array(obc_buff)
+obc_buff_pnts_resamp=linestring_utils.downsample_linearring(obc_buff_pnts,sponge_L*0.5)
+
+sample_sets.append( np.c_[obc_buff_pnts_resamp[:,0],
+                          obc_buff_pnts_resamp[:,1],
+                          bg_visc*np.ones(len(obc_buff_pnts_resamp))] )
+
+# And some far flung values
+x0,x1,y0,y1=g.bounds()
+corners=np.array( [[x0-sponge_L,y0-sponge_L],
+                   [x0-sponge_L,y1+sponge_L],
+                   [x1+sponge_L,y1+sponge_L],
+                   [x1+sponge_L,y0-sponge_L]] )
+
+sample_sets.append( np.c_[corners[:,0],
+                          corners[:,1],
+                          bg_visc*np.ones(len(corners))] )
+
+visc_samples=np.concatenate(sample_sets,axis=0)
+
+##
+
+np.savetxt(os.path.join(run_base_dir,'viscosity.xyz'),
+           visc_samples)
+##
+
+plt.figure(13).clf()
+fig,ax=plt.subplots(num=13)
+                    
+g.plot_edges(color='k',lw=0.5,ax=ax)
+#ax.plot(obc_centers[:,0],obc_centers[:,1],'g.')
+plot_wkb.plot_wkb(obc_buff,ax=ax)
+#ax.plot(obc_buff_pnts_resamp[:,0],
+#        obc_buff_pnts_resamp[:,1],
+#        'b.')
+ax.scatter(visc_samples[:,0],visc_samples[:,1],40,visc_samples[:,2])
+
+##
+
+# How did that actually get interpreted?
+ds=xr.open_dataset('runs/short_test_07/DFM_OUTPUT_short_test_07/short_test_07_map.nc')
+gds=dfm_grid.DFMGrid(ds)
+
+viu=ds.viu.isel(time=1,laydim=-19)
+
+##
+
+plt.figure(23).clf()
+fig,ax=plt.subplots(num=23)
+# gds.plot_edges(values=viu,ax=ax)
+ax.scatter( ds.FlowLink_xu, ds.FlowLink_yu, 40, viu )
+ax.axis('equal')
