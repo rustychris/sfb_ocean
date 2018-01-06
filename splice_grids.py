@@ -1,3 +1,5 @@
+import six
+
 import numpy as np
 import matplotlib.pyplot as plt
 from shapely import geometry
@@ -11,7 +13,7 @@ from stompy import utils
 
 g_roms=unstructured_grid.UnstructuredGrid.from_ugrid('derived/matched_grid_v01.nc')
 
-g_sfb=dfm_grid.DFMGrid('../../sfb_dfm_v2/sfei_v19_net.nc')
+g_sfb=dfm_grid.DFMGrid('../../sfb_dfm_v2/sfei_v20_net.nc')
 
 ## 
 g_roms_poly=g_roms.boundary_polygon()
@@ -319,7 +321,7 @@ g_complete.plot_nodes(values=g_complete.nodes['src'])
 
 ##
 
-g_complete.write_ugrid('spliced_grids_01.nc')
+g_complete.write_ugrid('spliced_grids_01.nc',overwrite=True)
 
 ##
 
@@ -331,6 +333,15 @@ for g_src,src in [ (g_sfb,1), (g_roms,2) ]:
     for n in np.nonzero(g_complete.nodes['src']==src)[0]:
         n_src=g_src.select_nodes_nearest( g_complete.nodes['x'][n] )
         splice_bathy[n]=g_src.nodes['depth'][n_src]
+
+##
+
+# Bathy in Napa is wrong here..
+# Wrong in g_sfb...
+plt.figure(1).clf()
+fig,ax=plt.subplots(num=1)
+scat=g_sfb.plot_nodes(values=g_sfb.nodes['depth'])
+scat.set_clim(-10,2)
 
 ##
 
@@ -349,9 +360,8 @@ g_complete.add_node_field('depth',splice_bathy)
 
 ##
 
-g_complete.write_ugrid('spliced_grids_01_bathy.nc')
-
-dfm_grid.write_dfm(g_complete,'spliced_grids_01_net.nc')
+g_complete.write_ugrid('spliced_grids_01_bathy.nc',overwrite=True)
+dfm_grid.write_dfm(g_complete,'spliced_grids_01_net.nc',overwrite=True)
 
 ##
 

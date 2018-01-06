@@ -2,11 +2,12 @@
 Driver script for coastal-ocean scale DFM runs, initially
 to support microplastics project
 """
-
 import subprocess
 import os
 import shutil
 import datetime
+
+import six
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -43,8 +44,9 @@ utm2ll=proj_utils.mapper('EPSG:26910','WGS84')
 # short_test_04: Adding COAMPS wind
 # short_test_05: Convert to more complete DFM script
 # short_test_06: Try 3D, 10 layers
-# short_text_07: ragged boundary
-run_name='short_test_07'
+# short_test_07: ragged boundary
+# short_text_08: Adding SF BAy
+run_name='short_test_08'
 
 run_base_dir=os.path.join('runs',run_name)
 os.path.exists(run_base_dir) or os.makedirs(run_base_dir)
@@ -86,7 +88,7 @@ if 0: # rectangular subset
     else:
         g=unstructured_grid.UnstructuredGrid.from_ugrid(ugrid_file)
 
-else: # ragged edge
+elif 0: # ragged edge
     ugrid_file='derived/matched_grid_v01.nc'
     
     if not os.path.exists(ugrid_file):
@@ -97,24 +99,27 @@ else: # ragged edge
         g.write_ugrid(ugrid_file)
     else:
         g=unstructured_grid.UnstructuredGrid.from_ugrid(ugrid_file)
+else: # Spliced grid generated in splice_grids.py
+    ugrid_file='spliced_grids_01_bathy.nc'
+    g=unstructured_grid.UnstructuredGrid.from_ugrid(ugrid_file)
         
 ## 
 
 # Identify ocean boundary edges
 # Limit the boundary edges to edges which have a real cell on the other
 # side in the ROMS output
-ca_roms.annotate_grid_from_data(g,run_start,run_stop)
+
+# This is picking up some extra points in the spliced grid.
+# So limit the edges we consider to edges which are exactly from
+# ROMS.  That should be safe.
+candidates=np.nonzero(g.edges['edge_src']==2)[0] # ROMS edges
+ca_roms.annotate_grid_from_data(g,run_start,run_stop,candidate_edges=candidates)
 
 boundary_edges=np.nonzero( g.edges['src_idx_out'][:,0] >= 0 )[0]
 
 ## 
 
-# # Need a source dataset to get an idea of what's where
-# src=xr.open_dataset('local/concat-ca_subCA_das.nc')
-# # estimate layer thicknesses
-# dz=utils.center_to_interval(src.depth.values)
-# src['dz']=('depth',),dz
-
+# rarely used at this point
 def roms_davg(val):
     dim=val.get_axis_num('depth')
     dz=utils.center_to_interval(val.depth.values)
@@ -277,6 +282,11 @@ def write_t3d(da,suffix,feat_suffix,edge_depth):
                 fp.write("\n")
 
 
+if 'edge_depth' in g.edges:
+    edge_depth=g.edges['edge_depth']
+else:
+    edge_depth=g.nodes['depth'][ g.edges['nodes'] ].mean(axis=1)
+                                                         
 for ji,j in enumerate(boundary_edges):
     # Old workaround attempt
     # if j in [99]:
@@ -286,7 +296,7 @@ for ji,j in enumerate(boundary_edges):
     src_name='oce%05d'%j
     print(src_name)
     
-    depth=g.edges['edge_depth'][j]
+    depth=edge_depth[j]
 
     if 1: # bring in OTPS harmonics:
         water_level=dfm_zeta_offset + otps_water_level.result.isel(site=ji)
@@ -380,7 +390,7 @@ for ji,j in enumerate(boundary_edges):
         if da.ndim==1:
             write_tim(da,suffix,feat_suffix)
         elif da.ndim==2:
-            write_t3d(da,suffix,feat_suffix,g.edges['edge_depth'][j])
+            write_t3d(da,suffix,feat_suffix,edge_depth[j])
             
     if 1: # advected velocity is 0
         quant='uxuyadvectionvelocitybnd'
@@ -406,6 +416,16 @@ for ji,j in enumerate(boundary_edges):
             
 ## 
 
+# Write spatially-variable horizontal eddy viscosity field
+# with background value of 10, and 1000 near
+# the boundary.
+
+ca_roms.add_sponge_layer(mdu,run_base_dir,g,boundary_edges,
+                         sponge_visc=1000,
+                         background_visc=10,
+                         sponge_L=25000)
+##
+
 if 1:
     mdu['geometry','NetFile'] = os.path.basename(ugrid_file).replace('.nc','_net.nc')
     dfm_grid.write_dfm(g,os.path.join(run_base_dir,mdu['geometry','NetFile']),
@@ -420,6 +440,7 @@ map_fn=os.path.join(run_base_dir,
                     '%s_map.nc'%run_name)
 ic_fn=os.path.join(run_base_dir,'initial_conditions_map.nc')
 if os.path.exists(map_fn):
+    assert False # Return to here - have to figure out multiple domains now.
     if not os.path.exists(ic_fn):
         snap=src.isel(time=[0])
         
@@ -441,150 +462,43 @@ mdu.write(mdu_fn)
 
 ##
 
-# Run it.
-subprocess.call([os.path.join(dfm_bin_dir,"dflowfm"),
-                 "--autostartstop",
-                 os.path.basename(mdu_fn)],
-                cwd=run_base_dir)
+nprocs=16
 
+if nprocs>1:
+    # Multiprocessing!
+    cmd="%s/mpiexec -n %d %s/dflowfm --partition:ndomains=%d %s"%(dfm_bin_dir,nprocs,dfm_bin_dir,nprocs,
+                                                                  mdu['geometry','NetFile'])
+    pwd=os.getcwd()
+    try:
+        os.chdir(run_base_dir)
+        res=subprocess.call(cmd,shell=True)
+    finally:
+        os.chdir(pwd)
 
-
-##
-
-
-# What would a vertical profile look like?
-snap=src # snapshot in time, full domain
-
-lat_slice=slice( g.cells['lati'].min(),g.cells['lati'].max()+1 )
-lon_slice=slice( g.cells['loni'].min(),g.cells['loni'].max()+1 )
-
-sub_salt=src.salt.isel(lat=lat_slice,lon=lon_slice)
-
-bSalt,bDepth=xr.broadcast(sub_salt,sub_salt.depth)
-
-all_salt=bSalt.values.ravel()
-all_depth=-bDepth.values.ravel()
-valid=np.isfinite(all_salt)
-all_salt=all_salt[valid]
-all_depth=all_depth[valid]
-
-plt.figure(21).clf()
-fig,ax=plt.subplots(num=21)
-ax.plot(all_salt,all_depth,'k.')
+    # similar, but for the mdu:
+    cmd="%s/generate_parallel_mdu.sh %s %d 6"%(dfm_bin_dir,os.path.basename(mdu_fn),nprocs)
+    try:
+        os.chdir(run_base_dir)
+        res=subprocess.call(cmd,shell=True)
+    finally:
+        os.chdir(pwd)
 
 ##
 
-##
-
-# What is going on with turbulence at the inflow boundary?
-ds=xr.open_dataset('runs/short_test_07/DFM_OUTPUT_short_test_07/short_test_07_map.nc')
-
-##
-
-dsg=dfm_grid.DFMGrid(ds)
-
-##
-# wdim=20: all zero.
-
-nut_vals=ds.vicwwu.isel(time=225,wdim=19)
-unorm_vals=ds.unorm.isel(time=225,laydim=-1)
-
-
-plt.figure(12).clf()
-fig,axs=plt.subplots(1,2,sharex=True,sharey=True,num=12)
-
-
-# This doesn't line up correctly -- some kind of stride issue
-#ecoll=dsg.plot_edges(values=np.log10(nut_vals.values.clip(1e-6,1)))
-#plt.colorbar(ecoll)
-
-for ax in axs:
-    dsg.plot_edges(lw=0.4,color='k',ax=ax)
-    
-scat=axs[0].scatter( ds.FlowLink_xu.values, ds.FlowLink_yu.values,
-                     40,np.log10(nut_vals.values.clip(1e-6,1)))
-plt.colorbar(scat,label="log10(nu_t)",ax=axs[0])
-
-scat2=axs[1].scatter( ds.FlowLink_xu.values, ds.FlowLink_yu.values,
-                      40,unorm_vals.values,
-                      vmin=-4,vmax=4,cmap='seismic')
-plt.colorbar(scat2,label="u_norm",ax=axs[1])
-axs[0].axis((404067.70525705366, 491720.227436808, 4006958.0484274048, 4171269.3235576618))
-# 
+if nprocs<=1:
+    # Run it.
+    subprocess.call([os.path.join(dfm_bin_dir,"dflowfm"),
+                     "--autostartstop",
+                     os.path.basename(mdu_fn)],
+                    cwd=run_base_dir)
+else:
+    cmd="%s/mpiexec -n %d %s/dflowfm --autostartstop %s"%(dfm_bin_dir,nprocs,dfm_bin_dir,
+                                                          mdu['geometry','NetFile'])
+    pwd=os.getcwd()
+    try:
+        os.chdir(run_base_dir)
+        res=subprocess.call(cmd,shell=True)
+    finally:
+        os.chdir(pwd)
 
 ## ----
-
-# Write spatially-variable horizontal eddy viscosity field
-# Triangulation, with large scale value of 10, and 1000 near
-# the boundary.
-
-from shapely import geometry
-from shapely.ops import cascaded_union
-from stompy.plot import plot_wkb
-from stompy.spatial import linestring_utils
-
-
-obc_centers=g.edges_center()[boundary_edges]
-
-obc_visc=1000
-bg_visc=10
-sponge_L=25000 # [m] roughly 8 cells
-
-sample_sets=[ np.c_[obc_centers[:,0],obc_centers[:,1],obc_visc*np.ones(len(obc_centers))] ]
-
-
-circs=[geometry.Point(xy).buffer(sponge_L)
-       for xy in obc_centers]
-obc_buff=cascaded_union(circs).boundary
-obc_buff_pnts=np.array(obc_buff)
-obc_buff_pnts_resamp=linestring_utils.downsample_linearring(obc_buff_pnts,sponge_L*0.5)
-
-sample_sets.append( np.c_[obc_buff_pnts_resamp[:,0],
-                          obc_buff_pnts_resamp[:,1],
-                          bg_visc*np.ones(len(obc_buff_pnts_resamp))] )
-
-# And some far flung values
-x0,x1,y0,y1=g.bounds()
-corners=np.array( [[x0-sponge_L,y0-sponge_L],
-                   [x0-sponge_L,y1+sponge_L],
-                   [x1+sponge_L,y1+sponge_L],
-                   [x1+sponge_L,y0-sponge_L]] )
-
-sample_sets.append( np.c_[corners[:,0],
-                          corners[:,1],
-                          bg_visc*np.ones(len(corners))] )
-
-visc_samples=np.concatenate(sample_sets,axis=0)
-
-##
-
-np.savetxt(os.path.join(run_base_dir,'viscosity.xyz'),
-           visc_samples)
-##
-
-plt.figure(13).clf()
-fig,ax=plt.subplots(num=13)
-                    
-g.plot_edges(color='k',lw=0.5,ax=ax)
-#ax.plot(obc_centers[:,0],obc_centers[:,1],'g.')
-plot_wkb.plot_wkb(obc_buff,ax=ax)
-#ax.plot(obc_buff_pnts_resamp[:,0],
-#        obc_buff_pnts_resamp[:,1],
-#        'b.')
-ax.scatter(visc_samples[:,0],visc_samples[:,1],40,visc_samples[:,2])
-
-##
-
-# How did that actually get interpreted?
-ds=xr.open_dataset('runs/short_test_07/DFM_OUTPUT_short_test_07/short_test_07_map.nc')
-gds=dfm_grid.DFMGrid(ds)
-
-viu=ds.viu.isel(time=1,laydim=-19)
-
-##
-
-plt.figure(23).clf()
-fig,ax=plt.subplots(num=23)
-# gds.plot_edges(values=viu,ax=ax)
-ax.scatter( ds.FlowLink_xu, ds.FlowLink_yu, 40, viu )
-ax.axis('equal')
