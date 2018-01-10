@@ -46,7 +46,7 @@ utm2ll=proj_utils.mapper('EPSG:26910','WGS84')
 # short_test_05: Convert to more complete DFM script
 # short_test_06: Try 3D, 10 layers
 # short_test_07: ragged boundary
-# short_text_08: Adding SF BAy
+# short_text_08: Adding SF Bay
 run_name='short_test_08'
 
 run_base_dir=os.path.join('runs',run_name)
@@ -430,45 +430,63 @@ ca_roms.add_sponge_layer(mdu,run_base_dir,g,boundary_edges,
 
 # ---------SF FRESH, POTW, DELTA
 # 
-# # SF Bay Freshwater and POTW, copied from sfb_dfm_v2:
-# # features which have manually set locations for this grid
-# adjusted_pli_fn = os.path.join(base_dir,'nudged_features.pli')
-# 
-# sfb_dfm_utils.add_sfbay_freshwater(run_base_dir,
-#                                    run_start,run_stop,ref_date,
-#                                    adjusted_pli_fn,
-#                                    freshwater_dir=os.path.join(base_dir, 'sfbay_freshwater'),
-#                                    grid=grid,
-#                                    dredge_depth=dredge_depth,
-#                                    old_bc_fn=old_bc_fn,
-#                                    all_flows_unit=ALL_FLOWS_UNIT)
-#                      
-# ##
-# 
-# # POTW inputs:
-# # The new-style boundary inputs file (FlowFM_bnd_new.ext) cannot represent
-# # sources and sinks, so these come in via the old-style file.
-# potw_dir=os.path.join(base_dir,'sfbay_potw')
-# 
-# sfb_dfm_utils.add_sfbay_potw(run_base_dir,
-#                              run_start,run_stop,ref_date,
-#                              potw_dir,
-#                              adjusted_pli_fn,
-#                              grid,dredge_depth,
-#                              old_bc_fn,
-#                              all_flows_unit=ALL_FLOWS_UNIT)
-# 
-# ##
-# 
-# # Delta boundary conditions
-# sfb_dfm_utils.add_delta_inflow(run_base_dir,
-#                                run_start,run_stop,ref_date,
-#                                static_dir=abs_static_dir,
-#                                grid=grid,dredge_depth=dredge_depth,
-#                                old_bc_fn=old_bc_fn,
-#                                all_flows_unit=ALL_FLOWS_UNIT)
-# 
-# 
+# SF Bay Freshwater and POTW, copied from sfb_dfm_v2:
+# features which have manually set locations for this grid
+# Borrow files from sfb_dfm_v2 -- should switch to submodules
+sfb_dfm_v2_base_dir="../../sfb_dfm_v2"
+adjusted_pli_fn = os.path.join(sfb_dfm_v2_base_dir,'nudged_features.pli')
+dredge_depth=-1
+
+# kludge - wind the clock back a bit:
+print("TOTAL KLUDGE ON FRESHWATER")
+from sfb_dfm_utils import sfbay_freshwater
+six.moves.reload_module(sfbay_freshwater)
+
+sfbay_freshwater.add_sfbay_freshwater(run_base_dir,
+                                      run_start,run_stop,ref_date,
+                                      adjusted_pli_fn,
+                                      freshwater_dir=os.path.join(sfb_dfm_v2_base_dir, 'sfbay_freshwater'),
+                                      grid=g,
+                                      dredge_depth=dredge_depth,
+                                      old_bc_fn=old_bc_fn,
+                                      all_flows_unit=False,
+                                      # RIGHT HERE !
+                                      time_offset=np.timedelta64(-365,'D'))
+                     
+##
+
+# POTW inputs:
+# The new-style boundary inputs file (FlowFM_bnd_new.ext) cannot represent
+# sources and sinks, so these come in via the old-style file.
+potw_dir=os.path.join(sfb_dfm_v2_base_dir,'sfbay_potw')
+from sfb_dfm_utils import sfbay_potw
+six.moves.reload_module(sfbay_potw)
+
+sfbay_potw.add_sfbay_potw(run_base_dir,
+                          run_start,run_stop,ref_date,
+                          potw_dir,
+                          adjusted_pli_fn,
+                          g,dredge_depth,
+                          old_bc_fn,
+                          all_flows_unit=False,
+                          time_offset=np.timedelta64(-365,'D'))
+
+##
+ 
+# Delta boundary conditions
+# may need help with inputs-static
+from sfb_dfm_utils import delta_inflow
+six.moves.reload_module(delta_inflow)
+
+delta_inflow.add_delta_inflow(run_base_dir,
+                              run_start,run_stop,ref_date,
+                              static_dir=os.path.join(sfb_dfm_v2_base_dir,"inputs-static"),
+                              grid=g,dredge_depth=dredge_depth,
+                              old_bc_fn=old_bc_fn,
+                              all_flows_unit=False,
+                              time_offset=np.timedelta64(-365,'D'))
+
+
 # ---------- END SF FRESH, POTW, DELTA
 
 ##
