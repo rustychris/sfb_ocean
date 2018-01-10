@@ -3,6 +3,7 @@ Driver script for coastal-ocean scale DFM runs, initially
 to support microplastics project
 """
 import subprocess
+import copy
 import os
 import shutil
 import datetime
@@ -424,6 +425,52 @@ ca_roms.add_sponge_layer(mdu,run_base_dir,g,boundary_edges,
                          sponge_visc=1000,
                          background_visc=10,
                          sponge_L=25000)
+
+##
+
+# ---------SF FRESH, POTW, DELTA
+# 
+# # SF Bay Freshwater and POTW, copied from sfb_dfm_v2:
+# # features which have manually set locations for this grid
+# adjusted_pli_fn = os.path.join(base_dir,'nudged_features.pli')
+# 
+# sfb_dfm_utils.add_sfbay_freshwater(run_base_dir,
+#                                    run_start,run_stop,ref_date,
+#                                    adjusted_pli_fn,
+#                                    freshwater_dir=os.path.join(base_dir, 'sfbay_freshwater'),
+#                                    grid=grid,
+#                                    dredge_depth=dredge_depth,
+#                                    old_bc_fn=old_bc_fn,
+#                                    all_flows_unit=ALL_FLOWS_UNIT)
+#                      
+# ##
+# 
+# # POTW inputs:
+# # The new-style boundary inputs file (FlowFM_bnd_new.ext) cannot represent
+# # sources and sinks, so these come in via the old-style file.
+# potw_dir=os.path.join(base_dir,'sfbay_potw')
+# 
+# sfb_dfm_utils.add_sfbay_potw(run_base_dir,
+#                              run_start,run_stop,ref_date,
+#                              potw_dir,
+#                              adjusted_pli_fn,
+#                              grid,dredge_depth,
+#                              old_bc_fn,
+#                              all_flows_unit=ALL_FLOWS_UNIT)
+# 
+# ##
+# 
+# # Delta boundary conditions
+# sfb_dfm_utils.add_delta_inflow(run_base_dir,
+#                                run_start,run_stop,ref_date,
+#                                static_dir=abs_static_dir,
+#                                grid=grid,dredge_depth=dredge_depth,
+#                                old_bc_fn=old_bc_fn,
+#                                all_flows_unit=ALL_FLOWS_UNIT)
+# 
+# 
+# ---------- END SF FRESH, POTW, DELTA
+
 ##
 
 if 1:
@@ -434,19 +481,155 @@ if 1:
 # This step is pretty slow the first time around.
 coamps.add_coamps_to_mdu(mdu,run_base_dir,g,use_existing=True)
 
-six.moves.reload_module(ca_roms)
+
+##
+
 map_fn=os.path.join(run_base_dir,
                     'DFM_OUTPUT_%s'%run_name,
                     '%s_map.nc'%run_name)
-ic_fn=os.path.join(run_base_dir,'initial_conditions_map.nc')
-if os.path.exists(map_fn):
-    assert False # Return to here - have to figure out multiple domains now.
-    if not os.path.exists(ic_fn):
-        snap=src.isel(time=[0])
+#map_fn_multi=os.path.join(run_base_dir,
+#                          'DFM_OUTPUT_%s'%run_name,
+#                          '%s_0000_map.nc'%run_name)
+
+
+##
+
+# Setting a full 3D initial condition requires a partitioned
+# run, so go ahead partition now:
+
+nprocs=16
+
+
+def dflowfm(mdu_fn,args=['--autostartstop']):
+    cmd=[os.path.join(dfm_bin_dir,"dflowfm")] + args
+    if mdu_fn is not None:
+        cmd.append(os.path.basename(mdu_fn))
+
+    if nprocs>1:
+        cmd=["%s/mpiexec"%dfm_bin_dir,"-n","%d"%nprocs] + cmd
+
+    # This is more backwards compatible than 
+    # passing cwd to subprocess()
+    pwd=os.getcwd()
+    try:
+        os.chdir(run_base_dir)
+        res=subprocess.call(cmd)
+    finally:
+        os.chdir(pwd)
+    return res
+
+
+def partition_grid():
+    if nprocs<=1:
+        return
+
+    dflowfm(None,["--partition:ndomains=%d"%nprocs,mdu['geometry','NetFile']])
+    
         
-        ic_map=ca_roms.set_ic_from_map_output(snap,
-                                              map_file=map_fn,
-                                              output_fn=ic_fn)
+def partition_mdu(mdu_fn):
+    if nprocs<=1:
+        return
+    
+    # similar, but for the mdu:
+    cmd="%s/generate_parallel_mdu.sh %s %d 6"%(dfm_bin_dir,os.path.basename(mdu_fn),nprocs)
+    pwd=os.getcwd()
+    try:
+        os.chdir(run_base_dir)
+        res=subprocess.call(cmd,shell=True)
+    finally:
+        os.chdir(pwd)
+
+## 
+
+# Need a partitioned grid for setting up 3D initial conditions
+partition_grid()
+
+## 
+if nprocs<=1:
+    map_fn=os.path.join(run_base_dir,
+                        'DFM_OUTPUT_%s-tmp'%run_name,
+                        '%s-tmp_map.nc'%run_name)
+    map_fns=[map_fn]
+else:
+    map_fns=[os.path.join(run_base_dir,
+                          'DFM_OUTPUT_%s-tmp'%run_name,
+                          '%s-tmp_%04d_map.nc'%(run_name,n))
+             for n in range(nprocs)]
+    map_fn=map_fns[0]
+    
+# This will not pick up on the map output being older than the partitioned grid!
+if not os.path.exists(map_fn):
+    # Very short run just to get a map file
+    # 
+    temp_mdu=copy.deepcopy(mdu)
+    temp_mdu.set_time_range(start=run_start,
+                            stop=run_start+np.timedelta64(60,'s'),
+                            ref_date=ref_date)
+    temp_mdu_fn=os.path.join(run_base_dir,run_name+"-tmp.mdu")
+    temp_mdu.write(temp_mdu_fn)
+    partition_mdu(temp_mdu_fn)
+
+    dflowfm(temp_mdu_fn)
+
+##
+
+if nprocs<=1:
+    ic_fns=[os.path.join(run_base_dir,'initial_conditions_map.nc')]
+else:
+    ic_fns=[os.path.join(run_base_dir,'initial_conditions_%04d_map.nc'%n)
+            for n in range(nprocs)]
+
+
+##
+
+# For forcing this to run -- include this while things are changing a lot
+[os.unlink(f) for f in ic_fns]
+
+# The map file should always exist now that we do a short run to
+# create it above, but if one wanted to skip the 3D IC, will
+# leave this test in.
+extrap_bay=True
+
+if os.path.exists(map_fn):
+    if not os.path.exists(ic_fns[0]):
+        # Get a baseline, global 2D salt field from Polaris/Peterson data
+        if extrap_bay:
+            import sfb_dfm_utils.initial_salinity
+            from stompy.spatial import field
+        
+            usgs_init_salt=sfb_dfm_utils.initial_salinity.samples_from_usgs(run_start)
+            cc_salt = sfb_dfm_utils.initial_salinity.samples_to_cells(usgs_init_salt,g)
+            salt_extrap_field=field.XYZField(X=cc_salt[:,:2], F=cc_salt[:,2])
+            salt_extrap_field.build_index()
+            missing_val=-999
+        else:
+            missing_val=20
+            
+        snap=src.isel(time=[0])
+
+        for ic_fn,map_fn in zip(ic_fns,map_fns):
+            ic_map=ca_roms.set_ic_from_map_output(snap,
+                                                  map_file=map_fn,
+                                                  output_fn=None, # ic_fn,
+                                                  missing=missing_val)
+            if extrap_bay:
+                # Any missing data should get filled in with 2D data from cc_salt
+                # This is way harder than it ought to be because in this case xarray
+                # is getting in the way a lot.
+                all_xy=np.c_[ ic_map.FlowElem_xcc.values,
+                              ic_map.FlowElem_ycc.values ]
+                fill_2d=salt_extrap_field.interpolate(all_xy,interpolation='nearest') # 2-3 seconds
+
+                # Fill missing values in ic_map.sa1 with the 2D extrapolated data
+                fill_3d=xr.DataArray(fill_2d,dims=['nFlowElem'])
+                _,fill_3dx=xr.broadcast(ic_map.sa1,fill_3d)
+                sa1=ic_map.sa1
+                new_sa1=sa1.where(sa1!=missing_val,other=fill_3dx)
+                ic_map['sa1']=new_sa1
+
+            ic_map.to_netcdf(ic_fn,format='NETCDF3_64BIT')
+    else:
+        ic_map=xr.open_dataset(ic_fns[0]) # for timestamping
 
     mdu['restart','RestartFile']='initial_conditions_map.nc'
     # Had some issues when this timestamp exactly lined up with the reference date.
@@ -454,6 +637,7 @@ if os.path.exists(map_fn):
     # exactly
     restart_time=utils.to_datetime(ic_map.time.values[0] + np.timedelta64(60,'s')).strftime('%Y%m%d%H%M')
     mdu['restart','RestartDateTime']=restart_time
+    
 
 ##
 
@@ -462,43 +646,19 @@ mdu.write(mdu_fn)
 
 ##
 
-nprocs=16
+partition_mdu(mdu_fn)
 
+## 
 if nprocs>1:
-    # Multiprocessing!
-    cmd="%s/mpiexec -n %d %s/dflowfm --partition:ndomains=%d %s"%(dfm_bin_dir,nprocs,dfm_bin_dir,nprocs,
-                                                                  mdu['geometry','NetFile'])
-    pwd=os.getcwd()
-    try:
-        os.chdir(run_base_dir)
-        res=subprocess.call(cmd,shell=True)
-    finally:
-        os.chdir(pwd)
-
-    # similar, but for the mdu:
-    cmd="%s/generate_parallel_mdu.sh %s %d 6"%(dfm_bin_dir,os.path.basename(mdu_fn),nprocs)
-    try:
-        os.chdir(run_base_dir)
-        res=subprocess.call(cmd,shell=True)
-    finally:
-        os.chdir(pwd)
+    # The partition script doesn't scatter initial conditions, though
+    mdu_fns=[mdu_fn.replace('.mdu','_%04d.mdu'%n)
+             for n in range(nprocs)]
+    for sub_mdu_fn,ic_fn in zip(mdu_fns,ic_fns):
+        sub_mdu=dio.MDUFile(sub_mdu_fn)
+        sub_mdu['restart','RestartFile']=os.path.basename(ic_fn)
+        sub_mdu.write(sub_mdu_fn)
 
 ##
 
-if nprocs<=1:
-    # Run it.
-    subprocess.call([os.path.join(dfm_bin_dir,"dflowfm"),
-                     "--autostartstop",
-                     os.path.basename(mdu_fn)],
-                    cwd=run_base_dir)
-else:
-    cmd="%s/mpiexec -n %d %s/dflowfm --autostartstop %s"%(dfm_bin_dir,nprocs,dfm_bin_dir,
-                                                          mdu['geometry','NetFile'])
-    pwd=os.getcwd()
-    try:
-        os.chdir(run_base_dir)
-        res=subprocess.call(cmd,shell=True)
-    finally:
-        os.chdir(pwd)
+# dflowfm(mdu_fn)
 
-## ----
