@@ -47,7 +47,8 @@ utm2ll=proj_utils.mapper('EPSG:26910','WGS84')
 # short_test_06: Try 3D, 10 layers
 # short_test_07: ragged boundary
 # short_text_08: Adding SF Bay
-run_name='short_test_08'
+# run_name='short_test_08'
+run_name="medium_09"
 
 run_base_dir=os.path.join('runs',run_name)
 os.path.exists(run_base_dir) or os.makedirs(run_base_dir)
@@ -56,7 +57,7 @@ mdu=dio.MDUFile('template.mdu')
 
 mdu['geometry','Kmx']=10
 mdu['geometry','SigmaGrowthFactor']=1
-if 0:
+if 1:
     mdu['geometry','StretchType']=1 # user defined 
     # These must sum exactly to 100.
     # There is currently a limitation in MDUFile that it does not keep
@@ -65,9 +66,9 @@ if 0:
 else:
     mdu['geometry','StretchType']=0 # uniform
     
-run_start=ref_date=np.datetime64('2017-08-10')
+run_start=ref_date=np.datetime64('2017-07-10')
 #run_stop=np.datetime64('2017-09-10')
-run_stop=np.datetime64('2017-08-20') # start shorter in 3D
+run_stop=np.datetime64('2017-09-20')
 
 mdu.set_time_range(start=run_start,
                    stop=run_stop,
