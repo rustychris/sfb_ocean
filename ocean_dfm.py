@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import xarray as xr
 import pandas as pd
-from stompy.spatial import proj_utils
+from stompy.spatial import proj_utils, field
 
 from stompy.model.delft import dfm_grid
 from stompy.model import otps
@@ -55,7 +55,7 @@ os.path.exists(run_base_dir) or os.makedirs(run_base_dir)
 
 mdu=dio.MDUFile('template.mdu')
 
-mdu['geometry','Kmx']=10
+mdu['geometry','Kmx']=20
 mdu['geometry','SigmaGrowthFactor']=1
 if 1:
     mdu['geometry','StretchType']=1 # user defined 
@@ -123,16 +123,6 @@ ca_roms.annotate_grid_from_data(g,run_start,run_stop,candidate_edges=candidates)
 boundary_edges=np.nonzero( g.edges['src_idx_out'][:,0] >= 0 )[0]
 
 ## 
-
-# rarely used at this point
-def roms_davg(val):
-    dim=val.get_axis_num('depth')
-    dz=utils.center_to_interval(val.depth.values)
-    weighted= np.nansum( (val*dz).values, axis=dim )
-    unit = np.sum( np.isfinite(val)*dz, axis=dim)
-    return weighted / unit
-
-##
 
 # To get lat/lon info
 src=xr.open_dataset(ca_roms_files[0])
@@ -242,9 +232,10 @@ def write_tim(da,suffix,feat_suffix):
         tim_fn=os.path.join(run_base_dir,node_name+".tim")
         df.to_csv(tim_fn, sep=' ', index=False, header=False, columns=columns)
 
-def write_t3d(da,suffix,feat_suffix,edge_depth):
+def write_t3d(da,suffix,feat_suffix,edge_depth,quantity='salinity'):
     """
     Write a 3D boundary condition for a feature from ROMS data
+     - most of the time writing boundaries is here
     """
     # Luckily the ROMS output does not lose any surface cells - so we don't
     # have to worry about a surface cell in roms_at_boundary going nan.
@@ -260,7 +251,7 @@ def write_t3d(da,suffix,feat_suffix,edge_depth):
     roms_depth_slice=slice(valid_depth_idxs[-1],None,-1)
 
     # This should be the right numbers, but reverse order
-    sigma = (-depth - da.depth.values[roms_depth_slice]) / -depth
+    sigma = (-edge_depth - da.depth.values[roms_depth_slice]) / -edge_depth
     sigma_str=" ".join(["%.4f"%s for s in sigma])
     elapsed_minutes=(da.time.values - ref_date)/np.timedelta64(60,'s')
     
@@ -269,22 +260,31 @@ def write_t3d(da,suffix,feat_suffix,edge_depth):
     # assumes there are already node names
     node_names=feat_suffix[2]
 
-    for node_idx,node_name in enumerate(node_names):
-        t3d_fn=os.path.join(run_base_dir,node_name+".t3d")
-        with open(t3d_fn,'wt') as fp:
-            fp.write("\n".join([
-                "LAYER_TYPE=sigma",
-                "LAYERS=%s"%sigma_str,
-                "VECTORMAX=1", # default, but be explicit
-                "quant=salinity",
-                "quantity1=salinity",
-                "# start of data",
-                ""]))
-            for ti,t in enumerate(elapsed_minutes):
-                fp.write("TIME=%g minutes since %s\n"%(t,ref_date_str))
-                data=" ".join( ["%.3f"%v for v in da.isel(time=ti).values[roms_depth_slice]] )
-                fp.write(data)
-                fp.write("\n")
+    t3d_fns=[os.path.join(run_base_dir,node_name+".t3d")
+             for node_idx,node_name in enumerate(node_names) ]
+
+    assert da.dims[0]=='time' # for speed up of direct indexing
+    
+    # Write the first, then copy it to the second node
+    with open(t3d_fns[0],'wt') as fp:
+        fp.write("\n".join([
+            "LAYER_TYPE=sigma",
+            "LAYERS=%s"%sigma_str,
+            "VECTORMAX=1", # default, but be explicit
+            "quant=%s"%quantity,
+            "quantity1=%s"%quantity,
+            "# start of data",
+            ""]))
+        for ti,t in enumerate(elapsed_minutes):
+            fp.write("TIME=%g minutes since %s\n"%(t,ref_date_str))
+            #data=" ".join( ["%.3f"%v for v in da.isel(time=ti).values[roms_depth_slice]] )
+            # Faster direct indexing:
+            data=" ".join( ["%.3f"%v for v in da.values[ti,roms_depth_slice]] )
+            fp.write(data)
+            fp.write("\n")
+            
+    for t3d_fn in t3d_fns[1:]:
+        shutil.copyfile(t3d_fns[0],t3d_fn)
 
 
 if 'edge_depth' in g.edges.dtype.names:
@@ -326,24 +326,23 @@ for ji,j in enumerate(boundary_edges):
                                    roms_water_level.values )
             water_level.values += roms_interp
             
-        if 1: # salinity
+        if 1: # salinity, temperature
             if 1: # proper spatial variation:
                 salinity_3d=roms_at_boundary.isel(boundary=ji).salt
+                temperature_3d=roms_at_boundary.isel(boundary=ji).temp
+                
                 for zi in range(len(salinity_3d.depth)):
                     salinity_3d.values[:,zi] = filters.lowpass(salinity_3d.values[:,zi],
                                                                cutoff=36,order=4,dt=6)
+                    temperature_3d.values[:,zi] = filters.lowpass(temperature_3d.values[:,zi],
+                                                                  cutoff=36,order=4,dt=6)
+
             else: # spatially constant
                 salinity_3d=roms_at_boundary.salt.mean(dim='boundary')
                 for zi in range(len(salinity_3d.depth)):
                     salinity_3d.values[:,zi] = filters.lowpass(salinity_3d.values[:,zi],
                                                                cutoff=36,order=4,dt=6)
                 
-            if 0:
-                salinity=roms_davg(salinity_3d)
-                salinity.values[:] = filters.lowpass(salinity.values,
-                                                     cutoff=36.,order=4,dt=6)
-                salinity.name='salinity'
-
     # try to include velocity here, too.
     # page 124 of the user manual:
     # zeta = 2*zeta_b - sqrt(H/g)*u - zeta_0
@@ -357,17 +356,12 @@ for ji,j in enumerate(boundary_edges):
 
     forcing_data=[]
 
-    #('waterlevelbnd',water_level,'_ssh'),
-    #('riemannbnd',riemann,'_rmn'),
-    #('salinitybnd',salinity,'_salt'),
-    #('uxuyadvectionvelocitybnd',veloc_uv,'_uv'),
-    #('velocitybnd',veloc_normal,'_vel'),
-    #('temperaturebnd',water_temp,'_temp')
-    
     if int(mdu['physics','Salinity']):
-        # forcing_data.append( ('salinitybnd',salinity,'_salt') )
         forcing_data.append( ('salinitybnd',salinity_3d,'_salt') )
 
+    if int(mdu['physics','Temperature']):
+        forcing_data.append( ('temperaturebnd',temperature_3d,'_temp') )
+        
     if 1: # riemann only
         # This works pretty well, good agreement at Point Reyes.
         forcing_data.append( ('riemannbnd',riemann,'_rmn') )
@@ -393,7 +387,8 @@ for ji,j in enumerate(boundary_edges):
         if da.ndim==1:
             write_tim(da,suffix,feat_suffix)
         elif da.ndim==2:
-            write_t3d(da,suffix,feat_suffix,edge_depth[j])
+            write_t3d(da,suffix,feat_suffix,edge_depth[j],
+                      quantity=quant.replace('bnd','') )
             
     if 1: # advected velocity is 0
         quant='uxuyadvectionvelocitybnd'
@@ -416,7 +411,6 @@ for ji,j in enumerate(boundary_edges):
                          coords={'time':times} )
         write_tim(da,suffix,feat_suffix)
 
-            
 ## 
 
 # Write spatially-variable horizontal eddy viscosity field
@@ -466,7 +460,6 @@ sfbay_freshwater.add_sfbay_freshwater(run_base_dir,
                                       dredge_depth=dredge_depth,
                                       old_bc_fn=old_bc_fn,
                                       all_flows_unit=False,
-                                      # RIGHT HERE !
                                       time_offset=time_offset)
                      
 ##
@@ -514,16 +507,6 @@ if 1:
 
 # This step is pretty slow the first time around.
 coamps.add_coamps_to_mdu(mdu,run_base_dir,g,use_existing=True)
-
-
-##
-
-map_fn=os.path.join(run_base_dir,
-                    'DFM_OUTPUT_%s'%run_name,
-                    '%s_map.nc'%run_name)
-#map_fn_multi=os.path.join(run_base_dir,
-#                          'DFM_OUTPUT_%s'%run_name,
-#                          '%s_0000_map.nc'%run_name)
 
 
 ##
@@ -628,13 +611,17 @@ if os.path.exists(map_fn):
     if not os.path.exists(ic_fns[0]):
         # Get a baseline, global 2D salt field from Polaris/Peterson data
         if extrap_bay:
-            import sfb_dfm_utils.initial_salinity
-            from stompy.spatial import field
+            from sfb_dfm_utils import initial_salinity
         
-            usgs_init_salt=sfb_dfm_utils.initial_salinity.samples_from_usgs(run_start)
-            cc_salt = sfb_dfm_utils.initial_salinity.samples_to_cells(usgs_init_salt,g)
+            usgs_init_salt=initial_salinity.samples_from_usgs(run_start,field='salinity')
+            usgs_init_temp=initial_salinity.samples_from_usgs(run_start,field='temperature')
+            
+            cc_salt = initial_salinity.samples_to_cells(usgs_init_salt,g)
+            cc_temp = initial_salinity.samples_to_cells(usgs_init_temp,g)
             salt_extrap_field=field.XYZField(X=cc_salt[:,:2], F=cc_salt[:,2])
+            temp_extrap_field=field.XYZField(X=cc_temp[:,:2], F=cc_temp[:,2])
             salt_extrap_field.build_index()
+            temp_extrap_field.build_index()
             missing_val=-999
         else:
             missing_val=20
@@ -652,14 +639,24 @@ if os.path.exists(map_fn):
                 # is getting in the way a lot.
                 all_xy=np.c_[ ic_map.FlowElem_xcc.values,
                               ic_map.FlowElem_ycc.values ]
-                fill_2d=salt_extrap_field.interpolate(all_xy,interpolation='nearest') # 2-3 seconds
 
-                # Fill missing values in ic_map.sa1 with the 2D extrapolated data
-                fill_3d=xr.DataArray(fill_2d,dims=['nFlowElem'])
-                _,fill_3dx=xr.broadcast(ic_map.sa1,fill_3d)
+                # Salinity:
+                #  fill missing values in ic_map.sa1 with the 2D extrapolated data
+                salt_fill_2d=salt_extrap_field.interpolate(all_xy,interpolation='nearest') # 2-3 seconds
+                salt_fill_3d=xr.DataArray(salt_fill_2d,dims=['nFlowElem'])
+                _,salt_fill_3dx=xr.broadcast(ic_map.sa1,salt_fill_3d)
                 sa1=ic_map.sa1
-                new_sa1=sa1.where(sa1!=missing_val,other=fill_3dx)
+                new_sa1=sa1.where(sa1!=missing_val,other=salt_fill_3dx)
                 ic_map['sa1']=new_sa1
+
+                # Temperature:
+                #  fill missing values in ic_map.tem1 with the 2D extrapolated data
+                temp_fill_2d=temp_extrap_field.interpolate(all_xy,interpolation='nearest') # 2-3 seconds
+                temp_fill_3d=xr.DataArray(temp_fill_2d,dims=['nFlowElem'])
+                _,temp_fill_3dx=xr.broadcast(ic_map.tem1,temp_fill_3d)
+                tem1=ic_map.tem1
+                new_tem1=tem1.where(tem1!=missing_val,other=temp_fill_3dx)
+                ic_map['tem1']=new_tem1
 
             ic_map.to_netcdf(ic_fn,format='NETCDF3_64BIT')
     else:
@@ -696,35 +693,3 @@ if nprocs>1:
 
 dflowfm(mdu_fn)
 
-##
-# print()
-# # Debugging IC
-# for p,ic_fn in enumerate(ic_fns):
-#     ic=xr.open_dataset(ic_fn)
-#     print("%2d: "%p,ic.sa1.values.min(), ic.sa1.values.max())
-#     ic.close()
-#     
-# # So block 3 is completely ignoring its IC.
-# # It has some level of mismatch in
-# # ** WARNING: my_rank=3:#nodes in file: 4347, #nodes in model: 4347.
-# # ** WARNING: my_rank=3:#links in file: 7233, #links in model: 7239.
-# # ** WARNING: Number of nodes/links read unequal to nodes/links in model
-# # Could be related to a warning:
-# # ** WARNING: One or more discharge boundaries are partitioned.
-# 
-# # So something is different between the tmp run and the real run, such that
-# # even though
-# 
-# ##
-# 
-# ic03=xr.open_dataset(ic_fns[3])
-# # => nFlowLink: 7233,   nNetLink: 7973
-# 
-# g03=dfm_grid.DFMGrid('runs/short_test_08/spliced_grids_01_bathy_0003_net.nc')
-# # Nedges: 7973.  Doesn't have nFlowLink.
-# 
-# map03=xr.open_dataset('runs/short_test_08/DFM_OUTPUT_short_test_08/short_test_08_0003_map.nc')
-# # => nFlowLink: 7239
-# 
-# tmp_map03=xr.open_dataset('runs/short_test_08/DFM_OUTPUT_short_test_08-tmp/short_test_08-tmp_0003_map.nc')
-# # => nFlowLink: 7233
