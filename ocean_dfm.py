@@ -54,14 +54,17 @@ os.path.exists(run_base_dir) or os.makedirs(run_base_dir)
 
 mdu=dio.MDUFile('template.mdu')
 
-mdu['geometry','Kmx']=20
-mdu['geometry','SigmaGrowthFactor']=1 
-mdu['geometry','StretchType']=1 # user defined 
-# These must sum exactly to 100.
-# There is currently a limitation in MDUFile that it does not keep
-# sections together, which causes problems
-mdu['geometry','StretchCoef']="8 8 7 7 6 6 6 6 5 5 5 5 5 5 5 5 2 2 1 1"
-
+mdu['geometry','Kmx']=10
+mdu['geometry','SigmaGrowthFactor']=1
+if 0:
+    mdu['geometry','StretchType']=1 # user defined 
+    # These must sum exactly to 100.
+    # There is currently a limitation in MDUFile that it does not keep
+    # sections together, which causes problems
+    mdu['geometry','StretchCoef']="8 8 7 7 6 6 6 6 5 5 5 5 5 5 5 5 2 2 1 1"
+else:
+    mdu['geometry','StretchType']=0 # uniform
+    
 run_start=ref_date=np.datetime64('2017-08-10')
 #run_stop=np.datetime64('2017-09-10')
 run_stop=np.datetime64('2017-08-20') # start shorter in 3D
@@ -283,17 +286,12 @@ def write_t3d(da,suffix,feat_suffix,edge_depth):
                 fp.write("\n")
 
 
-if 'edge_depth' in g.edges:
+if 'edge_depth' in g.edges.dtype.names:
     edge_depth=g.edges['edge_depth']
 else:
     edge_depth=g.nodes['depth'][ g.edges['nodes'] ].mean(axis=1)
                                                          
 for ji,j in enumerate(boundary_edges):
-    # Old workaround attempt
-    # if j in [99]:
-    #     print("EDGE %d might be a bad apple.  Skip"%j)
-    #     continue
-    
     src_name='oce%05d'%j
     print(src_name)
     
@@ -310,29 +308,23 @@ for ji,j in enumerate(boundary_edges):
 
         # inward-positive
         veloc_normal=g.edges['bc_norm_in'][j,0]*veloc_u + g.edges['bc_norm_in'][j,1]*veloc_v
-
-        # 
-        riemann=water_level
-        if 1: # try to include velocity here, too.
-            # page 124 of the user manual:
-            # zeta = 2*zeta_b - sqrt(H/g)*u - zeta_0
-            # zeta_0 is initial water level, aka zeta_ic
-            # if zeta is what we want the water level to be,
-            # and zeta_b is what we give to DFM, then
-            # zeta_b=0.5*( zeta+zeta_0 + sqrt(H/g)*u)
-            
-            riemann=0.5*(riemann + zeta_ic + np.sqrt(np.abs(depth)/9.8)*veloc_normal)
         
-    if 1: # ROMS:
-        if 0:
-            assert False # this stanza is old
-            water_level=src.zeta.isel(lat=lat_idx_out,lon=lon_idx_out)
+    if 1: # ROMS:        
+        if 1: # Add ROMS zeta to waterlevel
+            roms_water_level=roms_at_boundary.zeta.isel(boundary=ji)
     
             # 36h cutoff with 6h data.
             # This will have some filtfilt trash at the end, probably okay
             # at the beginning
-            water_level.values[:] = filters.lowpass(water_level.values,
-                                                    cutoff=36.,order=4,dt=6)
+            roms_water_level.values[:] = filters.lowpass(roms_water_level.values,
+                                                         cutoff=36.,order=4,dt=6)
+
+            # As far as I know, ROMS zeta is relative to MSL
+            roms_interp=np.interp( utils.to_dnum(water_level.time),
+                                   utils.to_dnum(roms_water_level.time),
+                                   roms_water_level.values )
+            water_level.values += roms_interp
+            
         if 1: # salinity
             if 1: # proper spatial variation:
                 salinity_3d=roms_at_boundary.isel(boundary=ji).salt
@@ -350,8 +342,17 @@ for ji,j in enumerate(boundary_edges):
                 salinity.values[:] = filters.lowpass(salinity.values,
                                                      cutoff=36.,order=4,dt=6)
                 salinity.name='salinity'
-        
-    assert np.all( np.isfinite(water_level.values) )
+
+    # try to include velocity here, too.
+    # page 124 of the user manual:
+    # zeta = 2*zeta_b - sqrt(H/g)*u - zeta_0
+    # zeta_0 is initial water level, aka zeta_ic
+    # if zeta is what we want the water level to be,
+    # and zeta_b is what we give to DFM, then
+    # zeta_b=0.5*( zeta+zeta_0 + sqrt(H/g)*u)
+    riemann=0.5*(water_level + zeta_ic + np.sqrt(np.abs(depth)/9.8)*veloc_normal)
+                
+    assert np.all( np.isfinite(water_level.values) ) # sanity check
 
     forcing_data=[]
 
@@ -435,6 +436,16 @@ ca_roms.add_sponge_layer(mdu,run_base_dir,g,boundary_edges,
 # Borrow files from sfb_dfm_v2 -- should switch to submodules
 sfb_dfm_v2_base_dir="../../sfb_dfm_v2"
 adjusted_pli_fn = os.path.join(sfb_dfm_v2_base_dir,'nudged_features.pli')
+
+if 1: # Transcribe to shapefile for debuggin/vis
+    from shapely import geometry
+    from stompy.spatial import wkb2shp
+    adj_pli_feats=dio.read_pli(adjusted_pli_fn)
+    names=[feat[0] for feat in adj_pli_feats]
+    geoms=[geometry.Point(feat[1].mean(axis=0)) for feat in adj_pli_feats]
+    wkb2shp.wkb2shp('derived/input_locations.shp',geoms,fields={'name':names},
+                    overwrite=True)
+
 dredge_depth=-1
 
 # kludge - wind the clock back a bit:
@@ -442,6 +453,10 @@ print("TOTAL KLUDGE ON FRESHWATER")
 from sfb_dfm_utils import sfbay_freshwater
 six.moves.reload_module(sfbay_freshwater)
 
+# This will pull freshwater data from 2012, where we already
+# have a separate run which kind of makes sense
+time_offset=np.datetime64('2012-01-01') - np.datetime64('2017-01-01') 
+    
 sfbay_freshwater.add_sfbay_freshwater(run_base_dir,
                                       run_start,run_stop,ref_date,
                                       adjusted_pli_fn,
@@ -451,7 +466,7 @@ sfbay_freshwater.add_sfbay_freshwater(run_base_dir,
                                       old_bc_fn=old_bc_fn,
                                       all_flows_unit=False,
                                       # RIGHT HERE !
-                                      time_offset=np.timedelta64(-365,'D'))
+                                      time_offset=time_offset)
                      
 ##
 
@@ -469,7 +484,7 @@ sfbay_potw.add_sfbay_potw(run_base_dir,
                           g,dredge_depth,
                           old_bc_fn,
                           all_flows_unit=False,
-                          time_offset=np.timedelta64(-365,'D'))
+                          time_offset=time_offset)
 
 ##
  
@@ -484,7 +499,7 @@ delta_inflow.add_delta_inflow(run_base_dir,
                               grid=g,dredge_depth=dredge_depth,
                               old_bc_fn=old_bc_fn,
                               all_flows_unit=False,
-                              time_offset=np.timedelta64(-365,'D'))
+                              time_offset=time_offset)
 
 
 # ---------- END SF FRESH, POTW, DELTA
@@ -601,7 +616,7 @@ else:
 ##
 
 # For forcing this to run -- include this while things are changing a lot
-[os.unlink(f) for f in ic_fns]
+[(os.path.exists(f) and os.unlink(f)) for f in ic_fns]
 
 # The map file should always exist now that we do a short run to
 # create it above, but if one wanted to skip the 3D IC, will
@@ -678,5 +693,37 @@ if nprocs>1:
 
 ##
 
-# dflowfm(mdu_fn)
+dflowfm(mdu_fn)
 
+##
+# print()
+# # Debugging IC
+# for p,ic_fn in enumerate(ic_fns):
+#     ic=xr.open_dataset(ic_fn)
+#     print("%2d: "%p,ic.sa1.values.min(), ic.sa1.values.max())
+#     ic.close()
+#     
+# # So block 3 is completely ignoring its IC.
+# # It has some level of mismatch in
+# # ** WARNING: my_rank=3:#nodes in file: 4347, #nodes in model: 4347.
+# # ** WARNING: my_rank=3:#links in file: 7233, #links in model: 7239.
+# # ** WARNING: Number of nodes/links read unequal to nodes/links in model
+# # Could be related to a warning:
+# # ** WARNING: One or more discharge boundaries are partitioned.
+# 
+# # So something is different between the tmp run and the real run, such that
+# # even though
+# 
+# ##
+# 
+# ic03=xr.open_dataset(ic_fns[3])
+# # => nFlowLink: 7233,   nNetLink: 7973
+# 
+# g03=dfm_grid.DFMGrid('runs/short_test_08/spliced_grids_01_bathy_0003_net.nc')
+# # Nedges: 7973.  Doesn't have nFlowLink.
+# 
+# map03=xr.open_dataset('runs/short_test_08/DFM_OUTPUT_short_test_08/short_test_08_0003_map.nc')
+# # => nFlowLink: 7239
+# 
+# tmp_map03=xr.open_dataset('runs/short_test_08/DFM_OUTPUT_short_test_08-tmp/short_test_08-tmp_0003_map.nc')
+# # => nFlowLink: 7233
