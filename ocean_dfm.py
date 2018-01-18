@@ -362,11 +362,11 @@ for ji,j in enumerate(boundary_edges):
     if int(mdu['physics','Temperature']):
         forcing_data.append( ('temperaturebnd',temperature_3d,'_temp') )
         
-    if 1: # riemann only
+    if 0: # riemann only
         # This works pretty well, good agreement at Point Reyes.
         forcing_data.append( ('riemannbnd',riemann,'_rmn') )
 
-    if 0: # Riemann only in shallow areas:
+    if 1: # Riemann only in shallow areas:
         if depth<-200:
             forcing_data.append( ('waterlevelbnd',water_level,'_ssh') )
         else:
