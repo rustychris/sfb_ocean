@@ -104,6 +104,7 @@ elif 0: # ragged edge
         g.write_ugrid(ugrid_file)
     else:
         g=unstructured_grid.UnstructuredGrid.from_ugrid(ugrid_file)
+        g.write_edges_shp('derived/matched_grid_v01.shp')
 else: # Spliced grid generated in splice_grids.py
     ugrid_file='spliced_grids_01_bathy.nc'
     g=unstructured_grid.UnstructuredGrid.from_ugrid(ugrid_file)
@@ -390,7 +391,7 @@ for ji,j in enumerate(boundary_edges):
             write_t3d(da,suffix,feat_suffix,edge_depth[j],
                       quantity=quant.replace('bnd','') )
             
-    if 1: # advected velocity is 0
+    if 1: # advected velocity is 0 in attempt for most stable
         quant='uxuyadvectionvelocitybnd'
         suffix='_uv'
         
@@ -421,6 +422,21 @@ ca_roms.add_sponge_layer(mdu,run_base_dir,g,boundary_edges,
                          sponge_visc=1000,
                          background_visc=10,
                          sponge_L=25000)
+##
+
+if 1:
+    obs_shp_fn = "inputs-static/observation-points.shp"
+    # Observation points taken from shapefile for easier editing/comparisons in GIS
+    obs_pnts=wkb2shp.shp2geom(obs_shp_fn)
+    obs_fn='observation_pnts.xyn'
+    
+    with open(os.path.join(run_base_dir,obs_fn),'wt') as fp:
+        for idx,row in enumerate(obs_pnts):
+            xy=np.array(row['geom'])
+            fp.write("%12g %12g '%s'\n"%(xy[0], xy[1], row['name']))
+    mdu['output','ObsFile'] = obs_fn
+
+
 
 ##
 
