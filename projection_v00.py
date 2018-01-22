@@ -10,6 +10,20 @@ from scipy import sparse
 from scipy.sparse import linalg
 
 ##
+
+def edge_normal_to_cell_vector(g,unorm):
+    edge_normals=g.edges_normals()
+    cell_vecs=np.zeros( (g.Ncells(),2), 'f8')
+    for c in range(g.Ncells()):
+        # What about a little linear system:
+        js=g.cell_to_edges(c)
+        A=edge_normals[js]
+        b=unorm[js]
+        Ainv=np.linalg.pinv(A)
+        cell_vecs[c,:]=Ainv.dot(b)
+    return cell_vecs
+    
+
 # divergence operator:
 def div_full_op(g):
     N=g.Ncells()
@@ -83,14 +97,29 @@ def grad_full_op(g):
     return G
 
 
-def cell_vector_to_edge_normal(g,cell_u,cell_v):
+def cell_vector_to_edge_normal(g,cell_u,cell_v,boundary='zero'):
+    """
+    g: grid
+    cell_u: [g.Ncells()] u component of vector
+    cell_v: ...
+    boundary: "zero" edge normals on the boundary get 0.
+     "inside" take value from valid neighbor
+    """
     edge_u=np.zeros(g.Nedges(),'f8')
     edge_v=np.zeros(g.Nedges(),'f8')
-    valid=np.all(g.edges['cells']>=0,axis=1) # interior edges
-    edge_u[valid]= 0.5*(cell_u[g.edges['cells'][valid,0]] +
-                        cell_u[g.edges['cells'][valid,1]])
-    edge_v[valid]= 0.5*(cell_v[g.edges['cells'][valid,0]] +
-                        cell_v[g.edges['cells'][valid,1]])
+    if boundary=='zero':
+        valid=np.all(g.edges['cells']>=0,axis=1) # interior edges
+        edge_u[valid]= 0.5*(cell_u[g.edges['cells'][valid,0]] +
+                            cell_u[g.edges['cells'][valid,1]])
+        edge_v[valid]= 0.5*(cell_v[g.edges['cells'][valid,0]] +
+                            cell_v[g.edges['cells'][valid,1]])
+    else:
+        c0=g.edges['cells'][:,0].copy()
+        c1=g.edges['cells'][:,1].copy()
+        c0[ c0<0 ] = c1[ c0<0 ]
+        c1[ c1<0 ] = c0[ c1<0 ]
+        edge_u[:]=0.5*(cell_u[c0] + cell_u[c1])
+        edge_v[:]=0.5*(cell_v[c0] + cell_v[c1])
     edge_uv=np.c_[edge_u,edge_v]
 
     edge_norms=g.edges_normals()
@@ -131,18 +160,16 @@ roms_ds=xr.open_dataset("../../cache/ca_roms/ca_subCA_das_2017091103.nc")
 cell_u=roms_ds.isel(time=0,depth=0).u.values[ g.cells['lati'], g.cells['loni']]
 cell_v=roms_ds.isel(time=0,depth=0).v.values[ g.cells['lati'], g.cells['loni']]
 
-edge_unorm=cell_vector_to_edge_normal(g,cell_u,cell_v)
+edge_unorm=cell_vector_to_edge_normal(g,cell_u,cell_v,boundary='inside')
 
 # flux face areas to go with each flux
 # For the moment, constant depths here.
 flux_A=g.edges_length() * 50.0
 J0=flux_A*edge_unorm
 
-##
-
 # What does the divergence look like?
 # Looks good!
-div_J0=T.dot(J0)
+# div_J0=T.dot(J0)
 
 ##
 
@@ -167,10 +194,7 @@ corr_unorm=Jcorr/flux_A
 ##
 
 # How did we do?
-new_unorm=edge_unorm+corr_unorm
 
-# L.dot(P) - rhs is very small.
-# L.dot(P) - (T.dot(G.dot(P))) is very small, so L is working.
 div_Jnew=T.dot(Jcorr+J0) # This is very small.  Success.
 
 ##
@@ -178,18 +202,6 @@ div_Jnew=T.dot(Jcorr+J0) # This is very small.  Success.
 # Need a method for going from edge normal to cell-centered vectors
 # doesn't have to be exact, just for visualization
 
-def edge_normal_to_cell_vector(g,unorm):
-    edge_normals=g.edges_normals()
-    cell_vecs=np.zeros( (g.Ncells(),2), 'f8')
-    for c in range(g.Ncells()):
-        # What about a little linear system:
-        js=g.cell_to_edges(c)
-        A=edge_normals[js]
-        b=unorm[js]
-        Ainv=np.linalg.pinv(A)
-        cell_vecs[c,:]=Ainv.dot(b)
-    return cell_vecs
-    
 corr_ucell=edge_normal_to_cell_vector(g,corr_unorm)
 
 
@@ -198,14 +210,17 @@ corr_ucell=edge_normal_to_cell_vector(g,corr_unorm)
 plt.figure(1).clf()
 fig,ax=plt.subplots(num=1)
 cc=g.cells_center()
-qset=ax.quiver(cc[:,0],cc[:,1],cell_u,cell_v)
+#qset=ax.quiver(cc[:,0],cc[:,1],cell_u,cell_v)
 #qset2=ax.quiver(cc[:,0],cc[:,1],corr_ucell[:,0],corr_ucell[:,1],color='red')
-qset3=ax.quiver(cc[:,0],cc[:,1],cell_u+corr_ucell[:,0],cell_v+corr_ucell[:,1],color='red')
+#qset3=ax.quiver(cc[:,0],cc[:,1],cell_u+corr_ucell[:,0],cell_v+corr_ucell[:,1],color='red')
 
 #ec=g.edges_center()
 #norms=g.edges_normals()
-#qset4=ax.quiver(ec[:,0],ec[:,1],norms[:,0]*edge_unorm,norms[:,1]*edge_unorm)
-#qset5=ax.quiver(ec[:,0],ec[:,1],norms[:,0]*(edge_unorm+corr_unorm),norms[:,1]*(edge_unorm+corr_unorm))
+qset4=ax.quiver(ec[:,0],ec[:,1],norms[:,0]*edge_unorm,norms[:,1]*edge_unorm,
+                units='xy',angles='xy',scale_units='xy',scale=2e-4,)
+qset5=ax.quiver(ec[:,0]+800,ec[:,1],norms[:,0]*(edge_unorm+corr_unorm),norms[:,1]*(edge_unorm+corr_unorm),
+                color='b',alpha=0.5,
+                units='xy',angles='xy',scale_units='xy',scale=2e-4)
 
 
 # ecoll=g.plot_edges(values=J0)
@@ -213,3 +228,4 @@ qset3=ax.quiver(cc[:,0],cc[:,1],cell_u+corr_ucell[:,0],cell_v+corr_ucell[:,1],co
 ccoll=g.plot_cells(values=P,zorder=-1)
 
 ax.axis('equal')
+
