@@ -46,9 +46,16 @@ utm2ll=proj_utils.mapper('EPSG:26910','WGS84')
 # short_test_05: Convert to more complete DFM script
 # short_test_06: Try 3D, 10 layers
 # short_test_07: ragged boundary
-# short_text_08: Adding SF Bay
-# run_name='short_test_08'
-run_name="medium_09"
+# short_test_08: Adding SF Bay
+# medium_09: Longer run, with temperature, and ill-behaved velocity
+# medium_10: add sponge layer diffusion for scalars, too
+# short_test_11: return to ROMS-only domain, and shorter duration
+run_name="short_test_11"
+
+include_fresh=False
+
+
+##
 
 run_base_dir=os.path.join('runs',run_name)
 os.path.exists(run_base_dir) or os.makedirs(run_base_dir)
@@ -60,15 +67,12 @@ mdu['geometry','SigmaGrowthFactor']=1
 if 1:
     mdu['geometry','StretchType']=1 # user defined 
     # These must sum exactly to 100.
-    # There is currently a limitation in MDUFile that it does not keep
-    # sections together, which causes problems
     mdu['geometry','StretchCoef']="8 8 7 7 6 6 6 6 5 5 5 5 5 5 5 5 2 2 1 1"
 else:
     mdu['geometry','StretchType']=0 # uniform
     
 run_start=ref_date=np.datetime64('2017-07-10')
-#run_stop=np.datetime64('2017-09-10')
-run_stop=np.datetime64('2017-09-20')
+run_stop=np.datetime64('2017-07-30')
 
 mdu.set_time_range(start=run_start,
                    stop=run_stop,
@@ -93,7 +97,7 @@ if 0: # rectangular subset
     else:
         g=unstructured_grid.UnstructuredGrid.from_ugrid(ugrid_file)
 
-elif 0: # ragged edge
+elif 1: # ragged edge
     ugrid_file='derived/matched_grid_v01.nc'
     
     if not os.path.exists(ugrid_file):
@@ -104,7 +108,9 @@ elif 0: # ragged edge
         g.write_ugrid(ugrid_file)
     else:
         g=unstructured_grid.UnstructuredGrid.from_ugrid(ugrid_file)
-        g.write_edges_shp('derived/matched_grid_v01.shp')
+        g_shp='derived/matched_grid_v01.shp'
+        if not os.path.exists(g_shp):
+            g.write_edges_shp(g_shp)
 else: # Spliced grid generated in splice_grids.py
     ugrid_file='spliced_grids_01_bathy.nc'
     g=unstructured_grid.UnstructuredGrid.from_ugrid(ugrid_file)
@@ -118,7 +124,10 @@ else: # Spliced grid generated in splice_grids.py
 # This is picking up some extra points in the spliced grid.
 # So limit the edges we consider to edges which are exactly from
 # ROMS.  That should be safe.
-candidates=np.nonzero(g.edges['edge_src']==2)[0] # ROMS edges
+if 'edge_src' in g.edges.dtype.names:
+    candidates=np.nonzero(g.edges['edge_src']==2)[0] # ROMS edges
+else:
+    candidates=None # assume it's a ROMS-only grid, all edges are from ROMS.
 ca_roms.annotate_grid_from_data(g,run_start,run_stop,candidate_edges=candidates)
 
 boundary_edges=np.nonzero( g.edges['src_idx_out'][:,0] >= 0 )[0]
@@ -421,7 +430,15 @@ for ji,j in enumerate(boundary_edges):
 ca_roms.add_sponge_layer(mdu,run_base_dir,g,boundary_edges,
                          sponge_visc=1000,
                          background_visc=10,
-                         sponge_L=25000)
+                         sponge_L=25000,quantity='viscosity')
+
+# For diffusivity, have to use smaller background number so that
+# freshwater inflows are not driven by diffusion
+ca_roms.add_sponge_layer(mdu,run_base_dir,g,boundary_edges,
+                         sponge_visc=1000,
+                         background_visc=0.001,
+                         sponge_L=25000,quantity='diffusivity')
+
 ##
 
 if 1:
@@ -436,80 +453,75 @@ if 1:
             fp.write("%12g %12g '%s'\n"%(xy[0], xy[1], row['name']))
     mdu['output','ObsFile'] = obs_fn
 
-
-
 ##
 
-# ---------SF FRESH, POTW, DELTA
-# 
-# SF Bay Freshwater and POTW, copied from sfb_dfm_v2:
-# features which have manually set locations for this grid
-# Borrow files from sfb_dfm_v2 -- should switch to submodules
-sfb_dfm_v2_base_dir="../../sfb_dfm_v2"
-adjusted_pli_fn = os.path.join(sfb_dfm_v2_base_dir,'nudged_features.pli')
+if include_fresh: # disable while using ROMS-only grid
+    # ---------SF FRESH, POTW, DELTA
+    # 
+    # SF Bay Freshwater and POTW, copied from sfb_dfm_v2:
+    # features which have manually set locations for this grid
+    # Borrow files from sfb_dfm_v2 -- should switch to submodules
+    sfb_dfm_v2_base_dir="../../sfb_dfm_v2"
+    adjusted_pli_fn = os.path.join(sfb_dfm_v2_base_dir,'nudged_features.pli')
 
-if 1: # Transcribe to shapefile for debuggin/vis
-    from shapely import geometry
-    from stompy.spatial import wkb2shp
-    adj_pli_feats=dio.read_pli(adjusted_pli_fn)
-    names=[feat[0] for feat in adj_pli_feats]
-    geoms=[geometry.Point(feat[1].mean(axis=0)) for feat in adj_pli_feats]
-    wkb2shp.wkb2shp('derived/input_locations.shp',geoms,fields={'name':names},
-                    overwrite=True)
+    if 1: # Transcribe to shapefile for debuggin/vis
+        from shapely import geometry
+        from stompy.spatial import wkb2shp
+        adj_pli_feats=dio.read_pli(adjusted_pli_fn)
+        names=[feat[0] for feat in adj_pli_feats]
+        geoms=[geometry.Point(feat[1].mean(axis=0)) for feat in adj_pli_feats]
+        wkb2shp.wkb2shp('derived/input_locations.shp',geoms,fields={'name':names},
+                        overwrite=True)
 
-dredge_depth=-1
+    dredge_depth=-1
 
-# kludge - wind the clock back a bit:
-print("TOTAL KLUDGE ON FRESHWATER")
-from sfb_dfm_utils import sfbay_freshwater
-six.moves.reload_module(sfbay_freshwater)
+    # kludge - wind the clock back a bit:
+    print("TOTAL KLUDGE ON FRESHWATER")
+    from sfb_dfm_utils import sfbay_freshwater
 
-# This will pull freshwater data from 2012, where we already
-# have a separate run which kind of makes sense
-time_offset=np.datetime64('2012-01-01') - np.datetime64('2017-01-01') 
-    
-sfbay_freshwater.add_sfbay_freshwater(run_base_dir,
-                                      run_start,run_stop,ref_date,
-                                      adjusted_pli_fn,
-                                      freshwater_dir=os.path.join(sfb_dfm_v2_base_dir, 'sfbay_freshwater'),
-                                      grid=g,
-                                      dredge_depth=dredge_depth,
-                                      old_bc_fn=old_bc_fn,
-                                      all_flows_unit=False,
-                                      time_offset=time_offset)
+    # This will pull freshwater data from 2012, where we already
+    # have a separate run which kind of makes sense
+    time_offset=np.datetime64('2012-01-01') - np.datetime64('2017-01-01') 
+
+    sfbay_freshwater.add_sfbay_freshwater(run_base_dir,
+                                          run_start,run_stop,ref_date,
+                                          adjusted_pli_fn,
+                                          freshwater_dir=os.path.join(sfb_dfm_v2_base_dir, 'sfbay_freshwater'),
+                                          grid=g,
+                                          dredge_depth=dredge_depth,
+                                          old_bc_fn=old_bc_fn,
+                                          all_flows_unit=False,
+                                          time_offset=time_offset)
                      
 ##
 
-# POTW inputs:
-# The new-style boundary inputs file (FlowFM_bnd_new.ext) cannot represent
-# sources and sinks, so these come in via the old-style file.
-potw_dir=os.path.join(sfb_dfm_v2_base_dir,'sfbay_potw')
-from sfb_dfm_utils import sfbay_potw
-six.moves.reload_module(sfbay_potw)
+if include_fresh:
+    # POTW inputs:
+    # The new-style boundary inputs file (FlowFM_bnd_new.ext) cannot represent
+    # sources and sinks, so these come in via the old-style file.
+    potw_dir=os.path.join(sfb_dfm_v2_base_dir,'sfbay_potw')
+    from sfb_dfm_utils import sfbay_potw
 
-sfbay_potw.add_sfbay_potw(run_base_dir,
-                          run_start,run_stop,ref_date,
-                          potw_dir,
-                          adjusted_pli_fn,
-                          g,dredge_depth,
-                          old_bc_fn,
-                          all_flows_unit=False,
-                          time_offset=time_offset)
-
-##
- 
-# Delta boundary conditions
-# may need help with inputs-static
-from sfb_dfm_utils import delta_inflow
-six.moves.reload_module(delta_inflow)
-
-delta_inflow.add_delta_inflow(run_base_dir,
+    sfbay_potw.add_sfbay_potw(run_base_dir,
                               run_start,run_stop,ref_date,
-                              static_dir=os.path.join(sfb_dfm_v2_base_dir,"inputs-static"),
-                              grid=g,dredge_depth=dredge_depth,
-                              old_bc_fn=old_bc_fn,
+                              potw_dir,
+                              adjusted_pli_fn,
+                              g,dredge_depth,
+                              old_bc_fn,
                               all_flows_unit=False,
                               time_offset=time_offset)
+
+    # Delta boundary conditions
+    # may need help with inputs-static
+    from sfb_dfm_utils import delta_inflow
+
+    delta_inflow.add_delta_inflow(run_base_dir,
+                                  run_start,run_stop,ref_date,
+                                  static_dir=os.path.join(sfb_dfm_v2_base_dir,"inputs-static"),
+                                  grid=g,dredge_depth=dredge_depth,
+                                  old_bc_fn=old_bc_fn,
+                                  all_flows_unit=False,
+                                  time_offset=time_offset)
 
 
 # ---------- END SF FRESH, POTW, DELTA

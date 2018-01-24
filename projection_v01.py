@@ -384,8 +384,11 @@ else: # average a bunch of them:
 #eta0=0.0*np.ones(model.Nelement,'f8')
 #eta1=eta0.copy()
 
-eta0=roms_zeta0[model.g.cells['lati'],model.g.cells['loni']]
-eta1=roms_zeta1[model.g.cells['lati'],model.g.cells['loni']]
+# for adding in MSL => NAVD88 correction.  Just dumb luck that it's 1.0
+dfm_zeta_offset=1.0
+
+eta0=dfm_zeta_offset + roms_zeta0[model.g.cells['lati'],model.g.cells['loni']]
+eta1=dfm_zeta_offset + roms_zeta1[model.g.cells['lati'],model.g.cells['loni']]
 
 V0=model.volumes(eta0)
 V1=model.volumes(eta1)
@@ -539,7 +542,7 @@ qset2=ax.quiver(cc[:,0],cc[:,1],corr_ucell[:,0],corr_ucell[:,1],color='m')
 div_J0_2=T2.dot(J0_2)
 depth_error=dt*div_J0_2 / self.element_area
 ccoll=g.plot_cells(values=depth_error,zorder=-1,ax=ax,cmap='seismic')
-ccoll.set_clim([-5,5])
+ccoll.set_clim([-500,500])
 
 water_depth=V0_2/self.element_area
 
@@ -551,10 +554,13 @@ plot_utils.cbar(ccoll_depth,ax=ax2,label='water column depth')
 
 ax.axis('equal')
 
+# Started with rms depth error of 796!?
+print("Depth error rms: %.3f"%utils.rms(depth_error))
+
 ##
 
 # Smoothing the depth error:
 # Should depth or volume get smoothed?  Probably volume, so that using
 # a
 # Probably to 
-depth_error
+
