@@ -50,10 +50,16 @@ utm2ll=proj_utils.mapper('EPSG:26910','WGS84')
 # medium_09: Longer run, with temperature, and ill-behaved velocity
 # medium_10: add sponge layer diffusion for scalars, too
 # short_test_11: return to ROMS-only domain, and shorter duration
-run_name="short_test_11"
+# short_test_12: attempt z layers
+run_name="short_test_12"
 
 include_fresh=False
+# layers='sigma'
+layers='z'
+# Seems that it runs okay without set_3d_ic, but hangs up with it.
+set_3d_ic=True
 
+extrap_bay=True # for 3D initial condition whether to extrapolated data inside the Bay.
 
 ##
 
@@ -61,22 +67,39 @@ run_base_dir=os.path.join('runs',run_name)
 os.path.exists(run_base_dir) or os.makedirs(run_base_dir)
 
 mdu=dio.MDUFile('template.mdu')
+mdu.set_filename(os.path.join(run_base_dir,run_name+".mdu"))
 
 mdu['geometry','Kmx']=20
 mdu['geometry','SigmaGrowthFactor']=1
-if 1:
-    mdu['geometry','StretchType']=1 # user defined 
-    # These must sum exactly to 100.
-    mdu['geometry','StretchCoef']="8 8 7 7 6 6 6 6 5 5 5 5 5 5 5 5 2 2 1 1"
-else:
-    mdu['geometry','StretchType']=0 # uniform
-    
+
 run_start=ref_date=np.datetime64('2017-07-10')
 run_stop=np.datetime64('2017-07-30')
 
 mdu.set_time_range(start=run_start,
                    stop=run_stop,
                    ref_date=ref_date)
+
+
+if layers=='z':
+    mdu['geometry','Layertype']=2 # z layers
+    if 0: # works, but uniform layers
+        mdu['geometry','StretchType']=0 # uniform
+        mdu['geometry','StretchCoef']=""
+    else:
+        mdu['geometry','StretchType']=2 # exponential
+        # surface percentage, ignored, bottom percentage
+        mdu['geometry','StretchCoef']="0.002 0.02 0.8"
+        
+else:
+    mdu['geometry','Layertype']=1 # sigma
+    if 1: # 
+        mdu['geometry','StretchType']=1 # user defined 
+        # These must sum exactly to 100.
+        mdu['geometry','StretchCoef']="8 8 7 7 6 6 6 6 5 5 5 5 5 5 5 5 2 2 1 1"
+    else:
+        mdu['geometry','StretchType']=0 # uniform
+    
+    
 
 old_bc_fn = os.path.join(run_base_dir,mdu['external forcing','ExtForceFile'])
 ## 
@@ -542,7 +565,7 @@ coamps.add_coamps_to_mdu(mdu,run_base_dir,g,use_existing=True)
 # Setting a full 3D initial condition requires a partitioned
 # run, so go ahead partition now:
 
-nprocs=16
+nprocs=2 # 16
 
 
 def dflowfm(mdu_fn,args=['--autostartstop']):
@@ -589,114 +612,121 @@ def partition_mdu(mdu_fn):
 # Need a partitioned grid for setting up 3D initial conditions
 partition_grid()
 
-## 
-if nprocs<=1:
-    map_fn=os.path.join(run_base_dir,
-                        'DFM_OUTPUT_%s-tmp'%run_name,
-                        '%s-tmp_map.nc'%run_name)
-    map_fns=[map_fn]
-else:
-    map_fns=[os.path.join(run_base_dir,
-                          'DFM_OUTPUT_%s-tmp'%run_name,
-                          '%s-tmp_%04d_map.nc'%(run_name,n))
-             for n in range(nprocs)]
-    map_fn=map_fns[0]
-    
-# This will not pick up on the map output being older than the partitioned grid!
-if not os.path.exists(map_fn):
-    # Very short run just to get a map file
-    # 
-    temp_mdu=copy.deepcopy(mdu)
-    temp_mdu.set_time_range(start=run_start,
-                            stop=run_start+np.timedelta64(60,'s'),
-                            ref_date=ref_date)
-    temp_mdu_fn=os.path.join(run_base_dir,run_name+"-tmp.mdu")
-    temp_mdu.write(temp_mdu_fn)
-    partition_mdu(temp_mdu_fn)
-
-    dflowfm(temp_mdu_fn)
-
 ##
 
-if nprocs<=1:
-    ic_fns=[os.path.join(run_base_dir,'initial_conditions_map.nc')]
-else:
-    ic_fns=[os.path.join(run_base_dir,'initial_conditions_%04d_map.nc'%n)
-            for n in range(nprocs)]
-
-
-##
-
-# For forcing this to run -- include this while things are changing a lot
-[(os.path.exists(f) and os.unlink(f)) for f in ic_fns]
-
-# The map file should always exist now that we do a short run to
-# create it above, but if one wanted to skip the 3D IC, will
-# leave this test in.
-extrap_bay=True
-
-if os.path.exists(map_fn):
-    if not os.path.exists(ic_fns[0]):
-        # Get a baseline, global 2D salt field from Polaris/Peterson data
-        if extrap_bay:
-            from sfb_dfm_utils import initial_salinity
-        
-            usgs_init_salt=initial_salinity.samples_from_usgs(run_start,field='salinity')
-            usgs_init_temp=initial_salinity.samples_from_usgs(run_start,field='temperature')
-            
-            cc_salt = initial_salinity.samples_to_cells(usgs_init_salt,g)
-            cc_temp = initial_salinity.samples_to_cells(usgs_init_temp,g)
-            salt_extrap_field=field.XYZField(X=cc_salt[:,:2], F=cc_salt[:,2])
-            temp_extrap_field=field.XYZField(X=cc_temp[:,:2], F=cc_temp[:,2])
-            salt_extrap_field.build_index()
-            temp_extrap_field.build_index()
-            missing_val=-999
-        else:
-            missing_val=20
-            
-        snap=src.isel(time=[0])
-
-        for ic_fn,map_fn in zip(ic_fns,map_fns):
-            ic_map=ca_roms.set_ic_from_map_output(snap,
-                                                  map_file=map_fn,
-                                                  output_fn=None, # ic_fn,
-                                                  missing=missing_val)
-            if extrap_bay:
-                # Any missing data should get filled in with 2D data from cc_salt
-                # This is way harder than it ought to be because in this case xarray
-                # is getting in the way a lot.
-                all_xy=np.c_[ ic_map.FlowElem_xcc.values,
-                              ic_map.FlowElem_ycc.values ]
-
-                # Salinity:
-                #  fill missing values in ic_map.sa1 with the 2D extrapolated data
-                salt_fill_2d=salt_extrap_field.interpolate(all_xy,interpolation='nearest') # 2-3 seconds
-                salt_fill_3d=xr.DataArray(salt_fill_2d,dims=['nFlowElem'])
-                _,salt_fill_3dx=xr.broadcast(ic_map.sa1,salt_fill_3d)
-                sa1=ic_map.sa1
-                new_sa1=sa1.where(sa1!=missing_val,other=salt_fill_3dx)
-                ic_map['sa1']=new_sa1
-
-                # Temperature:
-                #  fill missing values in ic_map.tem1 with the 2D extrapolated data
-                temp_fill_2d=temp_extrap_field.interpolate(all_xy,interpolation='nearest') # 2-3 seconds
-                temp_fill_3d=xr.DataArray(temp_fill_2d,dims=['nFlowElem'])
-                _,temp_fill_3dx=xr.broadcast(ic_map.tem1,temp_fill_3d)
-                tem1=ic_map.tem1
-                new_tem1=tem1.where(tem1!=missing_val,other=temp_fill_3dx)
-                ic_map['tem1']=new_tem1
-
-            ic_map.to_netcdf(ic_fn,format='NETCDF3_64BIT')
+if set_3d_ic:
+    if nprocs<=1:
+        map_fn=os.path.join(run_base_dir,
+                            'DFM_OUTPUT_%s-tmp'%run_name,
+                            '%s-tmp_map.nc'%run_name)
+        map_fns=[map_fn]
     else:
-        ic_map=xr.open_dataset(ic_fns[0]) # for timestamping
+        map_fns=[os.path.join(run_base_dir,
+                              'DFM_OUTPUT_%s-tmp'%run_name,
+                              '%s-tmp_%04d_map.nc'%(run_name,n))
+                 for n in range(nprocs)]
+        map_fn=map_fns[0]
 
-    mdu['restart','RestartFile']='initial_conditions_map.nc'
-    # Had some issues when this timestamp exactly lined up with the reference date.
-    # adding 1 minute works around that, with a minor warning that these don't match
-    # exactly
-    restart_time=utils.to_datetime(ic_map.time.values[0] + np.timedelta64(60,'s')).strftime('%Y%m%d%H%M')
-    mdu['restart','RestartDateTime']=restart_time
-    
+    # This will not pick up on the map output being older than the partitioned grid!
+    if not os.path.exists(map_fn):
+        # Very short run just to get a map file
+        # 
+        temp_mdu=copy.deepcopy(mdu)
+        temp_mdu.set_time_range(start=run_start,
+                                stop=run_start+np.timedelta64(60,'s'),
+                                ref_date=ref_date)
+        temp_mdu_fn=os.path.join(run_base_dir,run_name+"-tmp.mdu")
+        temp_mdu.write(temp_mdu_fn)
+        partition_mdu(temp_mdu_fn)
+
+        dflowfm(temp_mdu_fn)
+
+    if nprocs<=1:
+        ic_fns=[os.path.join(run_base_dir,'initial_conditions_map.nc')]
+    else:
+        ic_fns=[os.path.join(run_base_dir,'initial_conditions_%04d_map.nc'%n)
+                for n in range(nprocs)]
+
+    # For forcing this to run -- include this while things are changing a lot
+    [(os.path.exists(f) and os.unlink(f)) for f in ic_fns]
+
+    # The map file should always exist now that we do a short run to
+    # create it above, but if one wanted to skip the 3D IC, will
+    # leave this test in.
+
+    if os.path.exists(map_fn):
+        if not os.path.exists(ic_fns[0]):
+            # Get a baseline, global 2D salt field from Polaris/Peterson data
+            if extrap_bay:
+                from sfb_dfm_utils import initial_salinity
+
+                usgs_init_salt=initial_salinity.samples_from_usgs(run_start,field='salinity')
+                usgs_init_temp=initial_salinity.samples_from_usgs(run_start,field='temperature')
+
+                cc_salt = initial_salinity.samples_to_cells(usgs_init_salt,g)
+                cc_temp = initial_salinity.samples_to_cells(usgs_init_temp,g)
+                salt_extrap_field=field.XYZField(X=cc_salt[:,:2], F=cc_salt[:,2])
+                temp_extrap_field=field.XYZField(X=cc_temp[:,:2], F=cc_temp[:,2])
+                salt_extrap_field.build_index()
+                temp_extrap_field.build_index()
+                missing_val=-999
+            else:
+                missing_val=20
+
+            snap=src.isel(time=[0])
+
+            for ic_fn,map_fn in zip(ic_fns,map_fns):
+                ic_map=ca_roms.set_ic_from_map_output(snap,
+                                                      map_file=map_fn,
+                                                      mdu=mdu,
+                                                      output_fn=None, # ic_fn,
+                                                      missing=missing_val)
+                if extrap_bay:
+                    # Any missing data should get filled in with 2D data from cc_salt
+                    # This is way harder than it ought to be because in this case xarray
+                    # is getting in the way a lot.
+                    all_xy=np.c_[ ic_map.FlowElem_xcc.values,
+                                  ic_map.FlowElem_ycc.values ]
+
+                    # Salinity:
+                    #  fill missing values in ic_map.sa1 with the 2D extrapolated data
+                    salt_fill_2d=salt_extrap_field.interpolate(all_xy,interpolation='nearest') # 2-3 seconds
+                    salt_fill_3d=xr.DataArray(salt_fill_2d,dims=['nFlowElem'])
+                    _,salt_fill_3dx=xr.broadcast(ic_map.sa1,salt_fill_3d)
+                    sa1=ic_map.sa1
+                    new_sa1=sa1.where(sa1!=missing_val,other=salt_fill_3dx)
+                    ic_map['sa1']=new_sa1
+
+                    # Temperature:
+                    #  fill missing values in ic_map.tem1 with the 2D extrapolated data
+                    temp_fill_2d=temp_extrap_field.interpolate(all_xy,interpolation='nearest') # 2-3 seconds
+                    temp_fill_3d=xr.DataArray(temp_fill_2d,dims=['nFlowElem'])
+                    _,temp_fill_3dx=xr.broadcast(ic_map.tem1,temp_fill_3d)
+                    tem1=ic_map.tem1
+                    new_tem1=tem1.where(tem1!=missing_val,other=temp_fill_3dx)
+                    ic_map['tem1']=new_tem1
+
+                ic_map.to_netcdf(ic_fn,format='NETCDF3_64BIT')
+        else:
+            ic_map=xr.open_dataset(ic_fns[0]) # for timestamping
+
+        mdu['restart','RestartFile']='initial_conditions_map.nc'
+        # Had some issues when this timestamp exactly lined up with the reference date.
+        # adding 1 minute works around that, with a minor warning that these don't match
+        # exactly
+        restart_time=utils.to_datetime(ic_map.time.values[0] + np.timedelta64(60,'s')).strftime('%Y%m%d%H%M')
+        mdu['restart','RestartDateTime']=restart_time
+else:
+    # don't set 3D IC:
+    mdu['restart','RestartFile']=""
+    mdu['restart','RestartDateTime']=""
+
+
+##
+
+# Trying to tame z-layers:
+# previously unset, but I think default is 1
+mdu['numerics','Keepzlayeringatbed']=0
 
 ##
 
@@ -708,7 +738,7 @@ mdu.write(mdu_fn)
 partition_mdu(mdu_fn)
 
 ## 
-if nprocs>1:
+if set_3d_ic and nprocs>1:
     # The partition script doesn't scatter initial conditions, though
     mdu_fns=[mdu_fn.replace('.mdu','_%04d.mdu'%n)
              for n in range(nprocs)]

@@ -41,7 +41,7 @@ Bamin             = 1E-06
 OpenBoundaryTolerance= 3
 RenumberFlowNodes = 1
 Kmx               = 0
-Layertype         = 1
+Layertype         = 2 # 1: sigma, 2: z  3: use VertplizFile
 Numtopsig         = 0
 SigmaGrowthFactor = 1
 StretchType       = 0                   # Type of layer stretching, 0 = uniform, 1 = user defined, 2 = exponential, 3 = twice exponential
@@ -168,7 +168,7 @@ HisFile           =
 HisInterval       = 300
 XLSInterval       =
 MapFile           =
-MapInterval       = 21600
+MapInterval       = 1200
 RstInterval       = 86400
 S1incinterval     =
 WaqInterval       = 0
