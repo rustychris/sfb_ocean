@@ -51,9 +51,10 @@ utm2ll=proj_utils.mapper('EPSG:26910','WGS84')
 # medium_10: add sponge layer diffusion for scalars, too
 # short_test_11: return to ROMS-only domain, and shorter duration
 # short_test_12: attempt z layers
-run_name="short_test_12"
+# short_test_13: bring the full domain back
+run_name="short_test_13"
 
-include_fresh=False
+include_fresh=True
 # layers='sigma'
 layers='z'
 # Seems that it runs okay without set_3d_ic, but hangs up with it.
@@ -70,7 +71,8 @@ mdu=dio.MDUFile('template.mdu')
 mdu.set_filename(os.path.join(run_base_dir,run_name+".mdu"))
 
 mdu['geometry','Kmx']=20
-mdu['geometry','SigmaGrowthFactor']=1
+if layers=='sigma':
+    mdu['geometry','SigmaGrowthFactor']=1
 
 run_start=ref_date=np.datetime64('2017-07-10')
 run_stop=np.datetime64('2017-07-30')
@@ -88,8 +90,15 @@ if layers=='z':
     else:
         mdu['geometry','StretchType']=2 # exponential
         # surface percentage, ignored, bottom percentage
-        mdu['geometry','StretchCoef']="0.002 0.02 0.8"
-        
+        # mdu['geometry','StretchCoef']="0.002 0.02 0.8"
+        # This gives about 2m surface cells, and O(500m) deep layers.
+        mdu['geometry','StretchCoef']="0.0003 0.02 0.7"
+        mdu['numerics','Zwsbtol'] = 0.0 # that's the default anyway...
+        # This is the safer of the options, but gives a stairstepped bed.
+        mdu['numerics','Keepzlayeringatbed']=1
+        # This helps with reconstructing the z-layer geometry, better than
+        # trying to duplicate dflowfm layer code.
+        mdu['output','FullGridOutput']    = 1
 else:
     mdu['geometry','Layertype']=1 # sigma
     if 1: # 
@@ -120,7 +129,7 @@ if 0: # rectangular subset
     else:
         g=unstructured_grid.UnstructuredGrid.from_ugrid(ugrid_file)
 
-elif 1: # ragged edge
+elif 0: # ragged edge
     ugrid_file='derived/matched_grid_v01.nc'
     
     if not os.path.exists(ugrid_file):
@@ -565,7 +574,7 @@ coamps.add_coamps_to_mdu(mdu,run_base_dir,g,use_existing=True)
 # Setting a full 3D initial condition requires a partitioned
 # run, so go ahead partition now:
 
-nprocs=2 # 16
+nprocs=16
 
 
 def dflowfm(mdu_fn,args=['--autostartstop']):
@@ -721,12 +730,6 @@ else:
     mdu['restart','RestartFile']=""
     mdu['restart','RestartDateTime']=""
 
-
-##
-
-# Trying to tame z-layers:
-# previously unset, but I think default is 1
-mdu['numerics','Keepzlayeringatbed']=0
 
 ##
 

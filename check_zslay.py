@@ -47,3 +47,22 @@ plt.plot(k,zslay,'b-o')
 
         
 zslay=z_layers(mdu)
+##
+
+# Another investigation - how to control size of the near-bed zlayers:
+
+ds=xr.open_dataset('runs/short_test_13_test/DFM_OUTPUT_short_test_13/short_test_13_0002_map.nc')
+
+zws=ds.FlowElem_zw.isel(time=0,nFlowElem=73).values
+zws_val=zws[zws<1e35]
+
+for k in range(len(zws_val)):
+    if k>0:
+        delta="%10.3f"%(zws[k]-zws[k-1])
+    else:
+        delta=""
+    print(" k=%3d  zws=%10.3f  delta=%s"%(k,zws[k],delta))
+ds.close()
+
+# first number maybe declares how thick the surface cell is?  or the elevation of the
+# first interface below the waterlevini, as a fraction of waterlevini to zmin.
