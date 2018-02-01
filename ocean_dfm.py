@@ -596,10 +596,19 @@ def dflowfm(mdu_fn,args=['--autostartstop']):
     return res
 
 
-def partition_grid():
+def partition_grid(clear_old=True):
     if nprocs<=1:
         return
 
+    if clear_old:
+        # Anecdotally it might help to clear the old netcdf files?
+        # Just trying to chase down how some bad values crept into these.
+        grid_fn=mdu.filepath(['geometry','NetFile'])
+        for p in range(nprocs):
+            gridN_fn=grid_fn.replace('_net.nc','_%04d_net.nc')
+            if os.path.exists(gridN_fn):
+                os.unlink(gridN_fn)
+    
     dflowfm(None,["--partition:ndomains=%d"%nprocs,mdu['geometry','NetFile']])
     
         

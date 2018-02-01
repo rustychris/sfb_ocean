@@ -51,7 +51,7 @@ zslay=z_layers(mdu)
 
 # Another investigation - how to control size of the near-bed zlayers:
 
-ds=xr.open_dataset('runs/short_test_13_test/DFM_OUTPUT_short_test_13/short_test_13_0002_map.nc')
+ds=xr.open_dataset('runs/short_test_13/DFM_OUTPUT_short_test_13/short_test_13_0002_map.nc')
 
 zws=ds.FlowElem_zw.isel(time=0,nFlowElem=73).values
 zws_val=zws[zws<1e35]
@@ -62,7 +62,22 @@ for k in range(len(zws_val)):
     else:
         delta=""
     print(" k=%3d  zws=%10.3f  delta=%s"%(k,zws[k],delta))
-ds.close()
+# ds.close()
 
 # first number maybe declares how thick the surface cell is?  or the elevation of the
 # first interface below the waterlevini, as a fraction of waterlevini to zmin.
+
+##
+
+# What can be assumed about FlowElem_zw?
+#  - does the number of layers ever change?
+zcount=(ds.FlowElem_zw<1e30).sum(dim='wdim')
+zcount_change=np.abs(np.diff(zcount.values,axis=0)).max()
+# - at least with the current setup, it never changes.
+# does this match with no surface cells being nan?
+# seems to match up.
+# So no info on what happens when a surface cell dries up.
+
+# Any metadata to help out here?
+# FlowElem_zw has basically no metadata (units, and a long_name)
+
