@@ -645,7 +645,12 @@ if set_3d_ic:
                  for n in range(nprocs)]
         map_fn=map_fns[0]
 
-    # This will not pick up on the map output being older than the partitioned grid!
+    if 1: # clear old maps
+        # Used to allow re-using this run, but that has been a constant source of pain,
+        # or at least perceived pain.
+        for fn in map_fns:
+            os.path.exists(fn) and os.unlink(fn)
+            
     if not os.path.exists(map_fn):
         # Very short run just to get a map file
         # 
