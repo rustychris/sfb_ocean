@@ -5,6 +5,8 @@ to support microplastics project
 import subprocess
 import copy
 import os
+import sys
+import glob
 import shutil
 import datetime
 
@@ -29,7 +31,6 @@ import sfb_dfm_utils
 
 ##
 
-#dfm_bin_dir="/opt/software/delft/dfm/r52184-opt/bin"
 dfm_bin_dir="/opt/software/delft/dfm/r53925-opt/bin"
 
 utm2ll=proj_utils.mapper('EPSG:26910','WGS84')
@@ -52,7 +53,9 @@ utm2ll=proj_utils.mapper('EPSG:26910','WGS84')
 # short_test_11: return to ROMS-only domain, and shorter duration
 # short_test_12: attempt z layers
 # short_test_13: bring the full domain back
-run_name="short_test_13"
+# short_test_14: bring back depth-average advected velocity, and then depth-varying velocity
+# medium_15: longer test
+run_name="medium_15"
 
 include_fresh=True
 # layers='sigma'
@@ -74,12 +77,26 @@ mdu['geometry','Kmx']=20
 if layers=='sigma':
     mdu['geometry','SigmaGrowthFactor']=1
 
-run_start=ref_date=np.datetime64('2017-07-10')
-run_stop=np.datetime64('2017-07-30')
+run_start=ref_date=np.datetime64('2017-07-01')
+run_stop=np.datetime64('2017-10-30')
 
 mdu.set_time_range(start=run_start,
                    stop=run_stop,
                    ref_date=ref_date)
+
+
+if 1: # clean out most of the run dir:
+    # rm -r *.pli *.tim *.t3d *.mdu FlowFM.ext *_net.nc DFM_* *.dia *.xy* initial_conditions_*
+    patts=['*.pli','*.tim','*.t3d','*.mdu','FlowFM.ext','*_net.nc','DFM_*', '*.dia','*.xy*','initial_conditions*']
+    for patt in patts:
+        matches=glob.glob(os.path.join(run_base_dir,patt))
+        for m in matches:
+            if os.path.isfile(m):
+                os.unlink(m)
+            elif os.path.isdir(m):
+                shutil.rmtree(m)
+            else:
+                raise Exception("What is %s ?"%m)
 
 
 if layers=='z':
@@ -281,21 +298,28 @@ def write_t3d(da,suffix,feat_suffix,edge_depth,quantity='salinity'):
     """
     # Luckily the ROMS output does not lose any surface cells - so we don't
     # have to worry about a surface cell in roms_at_boundary going nan.
-    assert da.ndim==2
+    assert da.ndim in [2,3]
     
     # get the depth of the internal cell:
     valid_depths=np.all( np.isfinite( da.values ), axis=da.get_axis_num('time') )
     valid_depth_idxs=np.nonzero(valid_depths)[0]
 
-    # Roms values count from the surface, positive down.
+    # ROMS values count from the surface, positive down.
     # but DFM wants bottom-up.
     # limit to valid depths, and reverse the order at the same time
     roms_depth_slice=slice(valid_depth_idxs[-1],None,-1)
 
     # This should be the right numbers, but reverse order
     sigma = (-edge_depth - da.depth.values[roms_depth_slice]) / -edge_depth
+    # Force it to span the full water column
+    sigma[0]=min(0.0,sigma[0])
+    sigma[-1]=max(1.0,sigma[-1])
+
     sigma_str=" ".join(["%.4f"%s for s in sigma])
     elapsed_minutes=(da.time.values - ref_date)/np.timedelta64(60,'s')
+
+    # DBG:
+    # print("T3D sigma: %.3f to %.3f"%(sigma[0],sigma[-1]))
     
     ref_date_str=utils.to_datetime(ref_date).strftime('%Y-%m-%d %H:%M:%S')
     
@@ -312,16 +336,17 @@ def write_t3d(da,suffix,feat_suffix,edge_depth,quantity='salinity'):
         fp.write("\n".join([
             "LAYER_TYPE=sigma",
             "LAYERS=%s"%sigma_str,
-            "VECTORMAX=1", # default, but be explicit
+            "VECTORMAX=%d"%(da.ndim-1), # default, but be explicit
             "quant=%s"%quantity,
-            "quantity1=%s"%quantity,
+            "quantity1=%s"%quantity, # why is this here?
             "# start of data",
             ""]))
         for ti,t in enumerate(elapsed_minutes):
             fp.write("TIME=%g minutes since %s\n"%(t,ref_date_str))
             #data=" ".join( ["%.3f"%v for v in da.isel(time=ti).values[roms_depth_slice]] )
             # Faster direct indexing:
-            data=" ".join( ["%.3f"%v for v in da.values[ti,roms_depth_slice]] )
+            # The ravel will interleave components - unclear if that's correct.
+            data=" ".join( ["%.3f"%v for v in da.values[ti,roms_depth_slice].ravel() ] )
             fp.write(data)
             fp.write("\n")
             
@@ -384,14 +409,29 @@ for ji,j in enumerate(boundary_edges):
                 for zi in range(len(salinity_3d.depth)):
                     salinity_3d.values[:,zi] = filters.lowpass(salinity_3d.values[:,zi],
                                                                cutoff=36,order=4,dt=6)
-                
-    # try to include velocity here, too.
-    # page 124 of the user manual:
-    # zeta = 2*zeta_b - sqrt(H/g)*u - zeta_0
-    # zeta_0 is initial water level, aka zeta_ic
-    # if zeta is what we want the water level to be,
-    # and zeta_b is what we give to DFM, then
-    # zeta_b=0.5*( zeta+zeta_0 + sqrt(H/g)*u)
+
+        if 1: # ROMS 3D velocity
+            roms_u=roms_at_boundary.isel(boundary=ji).u
+            roms_v=roms_at_boundary.isel(boundary=ji).v
+            
+            for zi in range(len(roms_u.depth)):
+                roms_u.values[:,zi] = filters.lowpass(roms_u.values[:,zi],
+                                                      cutoff=36,order=4,dt=6)
+                roms_v.values[:,zi] = filters.lowpass(roms_v.values[:,zi],
+                                                      cutoff=36,order=4,dt=6)
+            roms_uv=xr.DataArray( np.array([roms_u.values,roms_v.values]).transpose(1,2,0),
+                                  coords=[('time',roms_u.time),
+                                          ('depth',roms_u.depth),
+                                          ('comp',['e','n'])])
+        veloc_uv.name='uv'
+            
+    # Include velocity in riemann BC:
+    #   from page 124 of the user manual:
+    #   zeta = 2*zeta_b - sqrt(H/g)*u - zeta_0
+    #   zeta_0 is initial water level, aka zeta_ic
+    #   if zeta is what we want the water level to be,
+    #   and zeta_b is what we give to DFM, then
+    #   zeta_b=0.5*( zeta+zeta_0 + sqrt(H/g)*u)
     riemann=0.5*(water_level + zeta_ic + np.sqrt(np.abs(depth)/9.8)*veloc_normal)
                 
     assert np.all( np.isfinite(water_level.values) ) # sanity check
@@ -432,7 +472,7 @@ for ji,j in enumerate(boundary_edges):
             write_t3d(da,suffix,feat_suffix,edge_depth[j],
                       quantity=quant.replace('bnd','') )
             
-    if 1: # advected velocity is 0 in attempt for most stable
+    if 1: # included advected velocity 
         quant='uxuyadvectionvelocitybnd'
         suffix='_uv'
         
@@ -445,13 +485,31 @@ for ji,j in enumerate(boundary_edges):
                    "\n"]
             fp.write("\n".join(lines))
         feat_suffix=write_pli(src_name,j,suffix)
-            
-        times=np.array( [run_start-np.timedelta64(1,'D'),
-                         run_stop+np.timedelta64(1,'D')] )
-        da=xr.DataArray( np.zeros( (len(times),2) ),
-                         dims=['time','two'],
-                         coords={'time':times} )
-        write_tim(da,suffix,feat_suffix)
+
+        if 0: # 0 in attempt for most stable
+            times=np.array( [run_start-np.timedelta64(1,'D'),
+                             run_stop+np.timedelta64(1,'D')] )
+            da=xr.DataArray( np.zeros( (len(times),2) ),
+                             dims=['time','comp'], # had been 'two'
+                             coords={'time':times} )
+            write_tim(da,suffix,feat_suffix)
+        elif 0: # depth-averaged from tidal model
+            write_tim(veloc_uv,suffix,feat_suffix)
+        else: # depth-varying from tidal model+ROMS
+            # veloc_uv: has the tidal time scale
+            # roms_u,roms_v: has the vertical variation
+            da_3d=xr.DataArray( np.zeros( (len(veloc_uv),len(roms_uv.depth),2) ),
+                                dims=['time','depth','comp'],
+                                coords={'time':veloc_uv.time,
+                                        'depth':roms_uv.depth} )
+            # This will broadcast tidal velocity over depth
+            da_3d+=veloc_uv
+            # And this is supposed grab nearest-in-time ROMS velocity to add in.
+            # Note that nearest just pulls an existing record, but retains the
+            # original time value, so grab the values directly
+            da_3d.values+=roms_uv.sel(time=da_3d.time,method='nearest').values
+            write_t3d(da_3d,suffix,feat_suffix,edge_depth[j],
+                      quantity=quant.replace('bnd','') )
 
 ## 
 
@@ -487,51 +545,60 @@ if 1:
 
 ##
 
-if include_fresh: # disable while using ROMS-only grid
-    # ---------SF FRESH, POTW, DELTA
-    # 
-    # SF Bay Freshwater and POTW, copied from sfb_dfm_v2:
-    # features which have manually set locations for this grid
-    # Borrow files from sfb_dfm_v2 -- should switch to submodules
-    sfb_dfm_v2_base_dir="../../sfb_dfm_v2"
-    adjusted_pli_fn = os.path.join(sfb_dfm_v2_base_dir,'nudged_features.pli')
+dredge_depth=-1
+# sfb_dfm_v2_base_dir="../../sfb_dfm_v2"
+adjusted_pli_fn = 'nudged_features.pli'
 
-    if 1: # Transcribe to shapefile for debuggin/vis
-        from shapely import geometry
-        from stompy.spatial import wkb2shp
-        adj_pli_feats=dio.read_pli(adjusted_pli_fn)
-        names=[feat[0] for feat in adj_pli_feats]
-        geoms=[geometry.Point(feat[1].mean(axis=0)) for feat in adj_pli_feats]
-        wkb2shp.wkb2shp('derived/input_locations.shp',geoms,fields={'name':names},
-                        overwrite=True)
+if include_fresh: 
+    
 
-    dredge_depth=-1
+    # ---------SF FRESH
+    if 0: # BAHM data
+        # SF Bay Freshwater and POTW, copied from sfb_dfm_v2:
+        # features which have manually set locations for this grid
+        # Borrow files from sfb_dfm_v2 -- should switch to submodules
 
-    # kludge - wind the clock back a bit:
-    print("TOTAL KLUDGE ON FRESHWATER")
-    from sfb_dfm_utils import sfbay_freshwater
+        if 1: # Transcribe to shapefile for debugging/vis
+            from shapely import geometry
+            from stompy.spatial import wkb2shp
+            adj_pli_feats=dio.read_pli(adjusted_pli_fn)
+            names=[feat[0] for feat in adj_pli_feats]
+            geoms=[geometry.Point(feat[1].mean(axis=0)) for feat in adj_pli_feats]
+            wkb2shp.wkb2shp('derived/input_locations.shp',geoms,fields={'name':names},
+                            overwrite=True)
 
-    # This will pull freshwater data from 2012, where we already
-    # have a separate run which kind of makes sense
-    time_offset=np.datetime64('2012-01-01') - np.datetime64('2017-01-01') 
+        # kludge - wind the clock back a bit:
+        print("TOTAL KLUDGE ON FRESHWATER")
+        from sfb_dfm_utils import sfbay_freshwater
 
-    sfbay_freshwater.add_sfbay_freshwater(run_base_dir,
-                                          run_start,run_stop,ref_date,
-                                          adjusted_pli_fn,
-                                          freshwater_dir=os.path.join(sfb_dfm_v2_base_dir, 'sfbay_freshwater'),
-                                          grid=g,
-                                          dredge_depth=dredge_depth,
-                                          old_bc_fn=old_bc_fn,
-                                          all_flows_unit=False,
-                                          time_offset=time_offset)
-                     
+        # This will pull freshwater data from 2012, where we already
+        # have a separate run which kind of makes sense
+        time_offset=np.datetime64('2012-01-01') - np.datetime64('2017-01-01') 
+
+        sfbay_freshwater.add_sfbay_freshwater(run_base_dir,
+                                              run_start,run_stop,ref_date,
+                                              adjusted_pli_fn,
+                                              freshwater_dir='sfbay_freshwater',
+                                              grid=g,
+                                              dredge_depth=dredge_depth,
+                                              old_bc_fn=old_bc_fn,
+                                              all_flows_unit=False,
+                                              time_offset=time_offset)
+    else: # watershed scaling
+        # Developing freshwater inputs for periods not covered by BAHM, but covered by
+        # a subset of USGS gages.
+        from sfb_dfm_utils import sfbay_scaled_watersheds
+        six.moves.reload_module(sfbay_scaled_watersheds)
+        sfbay_scaled_watersheds.add_sfbay_freshwater(mdu,
+                                                     'inputs-static/watershed_inflow_locations.shp',
+                                                     g,dredge_depth)
+
 ##
 
-if include_fresh:
-    # POTW inputs:
+if include_fresh: # POTWs
     # The new-style boundary inputs file (FlowFM_bnd_new.ext) cannot represent
     # sources and sinks, so these come in via the old-style file.
-    potw_dir=os.path.join(sfb_dfm_v2_base_dir,'sfbay_potw')
+    potw_dir='sfbay_potw'
     from sfb_dfm_utils import sfbay_potw
 
     sfbay_potw.add_sfbay_potw(run_base_dir,
@@ -541,20 +608,19 @@ if include_fresh:
                               g,dredge_depth,
                               old_bc_fn,
                               all_flows_unit=False,
-                              time_offset=time_offset)
-
+                              time_offset= np.datetime64('2016-01-01') - np.datetime64('2017-01-01') )
+if include_fresh: # DELTA
     # Delta boundary conditions
     # may need help with inputs-static
     from sfb_dfm_utils import delta_inflow
 
     delta_inflow.add_delta_inflow(run_base_dir,
                                   run_start,run_stop,ref_date,
-                                  static_dir=os.path.join(sfb_dfm_v2_base_dir,"inputs-static"),
+                                  static_dir=os.path.join("inputs-static"),
                                   grid=g,dredge_depth=dredge_depth,
                                   old_bc_fn=old_bc_fn,
                                   all_flows_unit=False,
-                                  time_offset=time_offset)
-
+                                  time_offset= np.datetime64('2016-01-01') - np.datetime64('2017-01-01'))
 
 # ---------- END SF FRESH, POTW, DELTA
 
@@ -768,3 +834,4 @@ if set_3d_ic and nprocs>1:
 
 dflowfm(mdu_fn)
 
+# Getting there, but it fails on no data associated with unnamed.. ?

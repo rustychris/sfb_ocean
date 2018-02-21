@@ -39,6 +39,8 @@ scen.name="merged"
 
 scen.write_hydro()
 
+print("Really need reload hydro as HydroFiles, then run adjust_boundaries_for_conservation()")
+
 ##
 
 hyd=multi_hydro
@@ -53,3 +55,4 @@ bnd=multi_hydro.create_bnd()
 ##
 
 dio.write_bnd(bnd,'test.bnd')
+
