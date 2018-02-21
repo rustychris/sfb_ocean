@@ -54,8 +54,9 @@ utm2ll=proj_utils.mapper('EPSG:26910','WGS84')
 # short_test_12: attempt z layers
 # short_test_13: bring the full domain back
 # short_test_14: bring back depth-average advected velocity, and then depth-varying velocity
-# medium_15: longer test
-run_name="medium_15"
+# medium_15: longer test.  runs, but doesn't look good against observations.
+# medium_16: try forcing more velocity than freesurface
+run_name="medium_16"
 
 include_fresh=True
 # layers='sigma'
@@ -448,11 +449,18 @@ for ji,j in enumerate(boundary_edges):
         # This works pretty well, good agreement at Point Reyes.
         forcing_data.append( ('riemannbnd',riemann,'_rmn') )
 
-    if 1: # Riemann only in shallow areas:
+    if 0: # Riemann only in shallow areas:
         if depth<-200:
             forcing_data.append( ('waterlevelbnd',water_level,'_ssh') )
         else:
             forcing_data.append( ('riemannbnd',riemann,'_rmn') )
+
+    if 1: # waterlevel in shallow areas, velocity elsewhere
+        if depth>-200:
+            forcing_data.append( ('waterlevelbnd',water_level,'_ssh') )
+        else:
+            # HERE -refactor the advection velocity from below to here.
+            forcing_data.append( ('velocitybnd',velo_3d,'_uv') )
             
 
     for quant,da,suffix in forcing_data:
@@ -472,7 +480,7 @@ for ji,j in enumerate(boundary_edges):
             write_t3d(da,suffix,feat_suffix,edge_depth[j],
                       quantity=quant.replace('bnd','') )
             
-    if 1: # included advected velocity 
+    if 0: # included advected velocity 
         quant='uxuyadvectionvelocitybnd'
         suffix='_uv'
         
