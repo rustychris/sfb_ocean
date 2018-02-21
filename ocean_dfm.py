@@ -291,6 +291,8 @@ def write_tim(da,suffix,feat_suffix):
 
         tim_fn=os.path.join(run_base_dir,node_name+".tim")
         df.to_csv(tim_fn, sep=' ', index=False, header=False, columns=columns)
+        # remaining nodes should default to the same value as the first.
+        # break
 
 def write_t3d(da,suffix,feat_suffix,edge_depth,quantity='salinity'):
     """
@@ -424,8 +426,23 @@ for ji,j in enumerate(boundary_edges):
                                   coords=[('time',roms_u.time),
                                           ('depth',roms_u.depth),
                                           ('comp',['e','n'])])
-        veloc_uv.name='uv'
-            
+
+    if 1: # depth-varying from tidal model+ROMS
+        # veloc_uv: has the tidal time scale
+        # roms_u,roms_v: has the vertical variation
+        veloc_3d=xr.DataArray( np.zeros( (len(veloc_uv),len(roms_uv.depth),2) ),
+                            dims=['time','depth','comp'],
+                            coords={'time':veloc_uv.time,
+                                    'depth':roms_uv.depth} )
+        # This will broadcast tidal velocity over depth
+        veloc_3d+=veloc_uv
+        # And this is supposed grab nearest-in-time ROMS velocity to add in.
+        # Note that nearest just pulls an existing record, but retains the
+        # original time value, so grab the values directly
+        veloc_3d.values+=roms_uv.sel(time=veloc_3d.time,method='nearest').values
+        veloc_3d.name='uv'
+
+        
     # Include velocity in riemann BC:
     #   from page 124 of the user manual:
     #   zeta = 2*zeta_b - sqrt(H/g)*u - zeta_0
@@ -460,8 +477,10 @@ for ji,j in enumerate(boundary_edges):
             forcing_data.append( ('waterlevelbnd',water_level,'_ssh') )
         else:
             # HERE -refactor the advection velocity from below to here.
-            forcing_data.append( ('velocitybnd',velo_3d,'_uv') )
+            forcing_data.append( ('velocitybnd',veloc_3d,'_uv3') )
             
+    if 0: # included advected velocity -- cannot coexist with velocitybnd
+        forcing_data.append( ('uxuyadvectionvelocitybnd',veloc_3d,'_uv3') )
 
     for quant,da,suffix in forcing_data:
         with open(old_bc_fn,'at') as fp:
@@ -474,51 +493,13 @@ for ji,j in enumerate(boundary_edges):
             fp.write("\n".join(lines))
 
         feat_suffix=write_pli(src_name,j,suffix)
-        if da.ndim==1:
-            write_tim(da,suffix,feat_suffix)
-        elif da.ndim==2:
+        
+        if 'depth' in da.dims:
             write_t3d(da,suffix,feat_suffix,edge_depth[j],
                       quantity=quant.replace('bnd','') )
-            
-    if 0: # included advected velocity 
-        quant='uxuyadvectionvelocitybnd'
-        suffix='_uv'
-        
-        with open(old_bc_fn,'at') as fp:
-            lines=["QUANTITY=%s"%quant,
-                   "FILENAME=%s%s.pli"%(src_name,suffix),
-                   "FILETYPE=9",
-                   "METHOD=3",
-                   "OPERAND=O",
-                   "\n"]
-            fp.write("\n".join(lines))
-        feat_suffix=write_pli(src_name,j,suffix)
-
-        if 0: # 0 in attempt for most stable
-            times=np.array( [run_start-np.timedelta64(1,'D'),
-                             run_stop+np.timedelta64(1,'D')] )
-            da=xr.DataArray( np.zeros( (len(times),2) ),
-                             dims=['time','comp'], # had been 'two'
-                             coords={'time':times} )
+        else:
             write_tim(da,suffix,feat_suffix)
-        elif 0: # depth-averaged from tidal model
-            write_tim(veloc_uv,suffix,feat_suffix)
-        else: # depth-varying from tidal model+ROMS
-            # veloc_uv: has the tidal time scale
-            # roms_u,roms_v: has the vertical variation
-            da_3d=xr.DataArray( np.zeros( (len(veloc_uv),len(roms_uv.depth),2) ),
-                                dims=['time','depth','comp'],
-                                coords={'time':veloc_uv.time,
-                                        'depth':roms_uv.depth} )
-            # This will broadcast tidal velocity over depth
-            da_3d+=veloc_uv
-            # And this is supposed grab nearest-in-time ROMS velocity to add in.
-            # Note that nearest just pulls an existing record, but retains the
-            # original time value, so grab the values directly
-            da_3d.values+=roms_uv.sel(time=da_3d.time,method='nearest').values
-            write_t3d(da_3d,suffix,feat_suffix,edge_depth[j],
-                      quantity=quant.replace('bnd','') )
-
+            
 ## 
 
 # Write spatially-variable horizontal eddy viscosity field
@@ -558,8 +539,6 @@ dredge_depth=-1
 adjusted_pli_fn = 'nudged_features.pli'
 
 if include_fresh: 
-    
-
     # ---------SF FRESH
     if 0: # BAHM data
         # SF Bay Freshwater and POTW, copied from sfb_dfm_v2:
