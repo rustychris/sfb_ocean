@@ -12,7 +12,7 @@ import stompy.model.delft.io as dio
 
 ############ COMPARISONS ##################
 
-run_name="short_test_06"
+run_name="short_test_18"
 run_base_dir="runs/%s"%run_name
 mdu_fn=os.path.join(run_base_dir,"%s.mdu"%run_name)
 

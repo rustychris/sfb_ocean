@@ -2,6 +2,10 @@
 Driver script for coastal-ocean scale DFM runs, initially
 to support microplastics project
 """
+import logging
+log=logging.getLogger('ocean_dfm')
+log.setLevel(logging.INFO)
+
 import subprocess
 import copy
 import os
@@ -29,13 +33,14 @@ from stompy.grid import unstructured_grid
 
 import sfb_dfm_utils
 
-##
-
+## 
 dfm_bin_dir="/opt/software/delft/dfm/r53925-opt/bin"
 
 utm2ll=proj_utils.mapper('EPSG:26910','WGS84')
+ll2utm=proj_utils.mapper('WGS84','EPSG:26910')
 
 ## 
+mdu=dio.MDUFile('template.mdu')
 
 # short_test_01: straight up waterlevel, 100% from OTPS
 # short_test_02: fix bathy, tried riemann, dirichlet
@@ -55,23 +60,37 @@ utm2ll=proj_utils.mapper('EPSG:26910','WGS84')
 # short_test_13: bring the full domain back
 # short_test_14: bring back depth-average advected velocity, and then depth-varying velocity
 # medium_15: longer test.  runs, but doesn't look good against observations.
-# medium_16: try forcing more velocity than freesurface
-run_name="medium_16"
+# medium_16: try forcing more velocity than freesurface.
+# short_17: return to ocean only, single cores
+# short_18: more aggressive sponge layer, no wind.
+# short_19: add wind back in
+# short_20: and switch to HYCOM
+# short_21: now OTPS velocities, no freesurface BCs
+# short_22: reduce to a SINGLE velocity BC to see if it is showing up correctly.
+run_name="short_22"
 
-include_fresh=True
-# layers='sigma'
-layers='z'
-# Seems that it runs okay without set_3d_ic, but hangs up with it.
+include_fresh=False # or True
+layers='z' # or 'sigma'
+grid='ragged_coast' # 'rectangle_coast' 'ragged_full', ...
+nprocs=1 # 16
+mdu['physics','Temperature']=1
+mdu['physics','Salinity']=1
+use_wind=False
+# not implemented otps_flux=True # use fluxes rather than velocities from OTPS
+
+coastal_source=['otps','hycom'] # 'roms'
+
+# ROMS has some wacky data, especially at depth.  set this to True to zero out
+# data below a certain depth (written as positive-down sounding)
+coastal_max_sounding=20000 # allow all depths
 set_3d_ic=True
-
-extrap_bay=True # for 3D initial condition whether to extrapolated data inside the Bay.
+extrap_bay=False # for 3D initial condition whether to extrapolated data inside the Bay.
 
 ##
 
 run_base_dir=os.path.join('runs',run_name)
 os.path.exists(run_base_dir) or os.makedirs(run_base_dir)
 
-mdu=dio.MDUFile('template.mdu')
 mdu.set_filename(os.path.join(run_base_dir,run_name+".mdu"))
 
 mdu['geometry','Kmx']=20
@@ -79,16 +98,17 @@ if layers=='sigma':
     mdu['geometry','SigmaGrowthFactor']=1
 
 run_start=ref_date=np.datetime64('2017-07-01')
-run_stop=np.datetime64('2017-10-30')
+# run_stop=np.datetime64('2017-10-30')
+run_stop=np.datetime64('2017-07-06')
 
 mdu.set_time_range(start=run_start,
                    stop=run_stop,
                    ref_date=ref_date)
 
-
 if 1: # clean out most of the run dir:
     # rm -r *.pli *.tim *.t3d *.mdu FlowFM.ext *_net.nc DFM_* *.dia *.xy* initial_conditions_*
-    patts=['*.pli','*.tim','*.t3d','*.mdu','FlowFM.ext','*_net.nc','DFM_*', '*.dia','*.xy*','initial_conditions*']
+    patts=['*.pli','*.tim','*.t3d','*.mdu','FlowFM.ext','*_net.nc','DFM_*', '*.dia',
+           '*.xy*','initial_conditions*','dflowfm-*.log']
     for patt in patts:
         matches=glob.glob(os.path.join(run_base_dir,patt))
         for m in matches:
@@ -117,7 +137,7 @@ if layers=='z':
         # This helps with reconstructing the z-layer geometry, better than
         # trying to duplicate dflowfm layer code.
         mdu['output','FullGridOutput']    = 1
-else:
+elif layers=='sigma':
     mdu['geometry','Layertype']=1 # sigma
     if 1: # 
         mdu['geometry','StretchType']=1 # user defined 
@@ -125,19 +145,32 @@ else:
         mdu['geometry','StretchCoef']="8 8 7 7 6 6 6 6 5 5 5 5 5 5 5 5 2 2 1 1"
     else:
         mdu['geometry','StretchType']=0 # uniform
-    
+else:
+    raise Exception("bad layer choice '%s'"%layers)
     
 
 old_bc_fn = os.path.join(run_base_dir,mdu['external forcing','ExtForceFile'])
 ## 
 
-from sfb_dfm_utils import ca_roms, coamps
+from sfb_dfm_utils import ca_roms, coamps, hycom
 
 # Get the ROMS inputs:
-ca_roms_files = ca_roms.fetch_ca_roms(run_start,run_stop)
+coastal_pad=np.timedelta64(10,'D') # lots of padding to avoid ringing from butterworth
+coastal_time_range=[run_start-coastal_pad,run_stop+coastal_pad]
+if 'roms' in coastal_source:
+    coastal_files=ca_roms.fetch_ca_roms(coastal_time_range[0],coastal_time_range[1])
+elif 'hycom' in coastal_source:
+    # As long as these are big enough, don't change (okay if too large),
+    # since the cached data relies on the ll ranges matching up.
+    hycom_lon_range=[-124.7, -121.7 ]
+    hycom_lat_range=[36.2, 38.85]
+
+    coastal_files=hycom.fetch_range(hycom_lon_range,hycom_lat_range,coastal_time_range)
+else:
+    coastal_files=None
 
 ##
-if 0: # rectangular subset
+if grid=='rectangle_coast': # rectangular subset
     ugrid_file='derived/matched_grid_v00.nc'
 
     if not os.path.exists(ugrid_file):
@@ -146,12 +179,13 @@ if 0: # rectangular subset
         g.write_ugrid(ugrid_file)
     else:
         g=unstructured_grid.UnstructuredGrid.from_ugrid(ugrid_file)
-
-elif 0: # ragged edge
+    coastal_bc_coords=None 
+    # should get some coordinates if I return to this grid
+    raise Exception("Probably ought to fill in coastal_bc_coords for this grid")
+elif grid=='ragged_coast': # ragged edge
     ugrid_file='derived/matched_grid_v01.nc'
     
     if not os.path.exists(ugrid_file):
-        six.moves.reload_module(ca_roms)
         poly=wkb2shp.shp2geom('grid-poly-v00.shp')[0]['geom']
         g=ca_roms.extract_roms_subgrid_poly(poly)
         ca_roms.add_coastal_bathy(g)
@@ -161,31 +195,45 @@ elif 0: # ragged edge
         g_shp='derived/matched_grid_v01.shp'
         if not os.path.exists(g_shp):
             g.write_edges_shp(g_shp)
-else: # Spliced grid generated in splice_grids.py
+    coastal_bc_coords=[ [450980., 4291405.], # northern
+                        [595426., 4037083.] ] # southern
+elif grid=='ragged_splice': # Spliced grid generated in splice_grids.py
     ugrid_file='spliced_grids_01_bathy.nc'
     g=unstructured_grid.UnstructuredGrid.from_ugrid(ugrid_file)
-        
+    # define candidates based on start/end coordinates
+    coastal_bc_coords=[ [450980., 4291405.], # northern
+                        [595426., 4037083.] ] # southern
+else:
+    raise Exception("Unknown grid %s"%grid)
 ## 
 
 # Identify ocean boundary edges
 # Limit the boundary edges to edges which have a real cell on the other
 # side in the ROMS output
 
-# This is picking up some extra points in the spliced grid.
-# So limit the edges we consider to edges which are exactly from
-# ROMS.  That should be safe.
-if 'edge_src' in g.edges.dtype.names:
-    candidates=np.nonzero(g.edges['edge_src']==2)[0] # ROMS edges
-else:
-    candidates=None # assume it's a ROMS-only grid, all edges are from ROMS.
-ca_roms.annotate_grid_from_data(g,run_start,run_stop,candidate_edges=candidates)
+if coastal_files is not None:
+    # Used to choose the candidate subset of edges based on some stuff in
+    # the grid, but to be more flexible about choices of coastal ocean 
+    # data, instead rely on a coordinate pair defining the section of
+    # grid boundary to be forced by coastal sources
 
-boundary_edges=np.nonzero( g.edges['src_idx_out'][:,0] >= 0 )[0]
+    if coastal_bc_coords is not None:
+        candidate_nodes=g.select_nodes_boundary_segment(coastal_bc_coords)
+        candidates=[ g.nodes_to_edge( [a,b] )
+                     for a,b in zip(candidate_nodes[:-1],
+                                    candidate_nodes[1:]) ]
+        candidates=np.array(candidates)
+    else:
+        candidates=None # !? danger will robinson.
+        
+    ca_roms.annotate_grid_from_data(g,coastal_files,candidate_edges=candidates)
+
+    boundary_edges=np.nonzero( g.edges['src_idx_out'][:,0] >= 0 )[0]
 
 ## 
 
-# To get lat/lon info
-src=xr.open_dataset(ca_roms_files[0])
+# To get lat/lon info, and later used for the initial condition
+src=xr.open_dataset(coastal_files[0])
 
 # May move more of this to sfb_dfm_utils in the future
 Otps=otps.otps_model.OTPS('/home/rusty/src/otps/OTPS2', # Locations of the OTPS software
@@ -200,8 +248,6 @@ z_harmonics = Otps.extract_HC( boundary_out_ll )
 u_harmonics = Otps.extract_HC( boundary_out_ll, quant='u')
 v_harmonics = Otps.extract_HC( boundary_out_ll, quant='v')
 
-##
-
 pad=np.timedelta64(2,'D')
 otps_times=np.arange(run_start-pad, run_stop+pad,
                      np.timedelta64(600,'s'))
@@ -210,40 +256,18 @@ otps_u=otps.reconstruct(u_harmonics,otps_times)
 otps_v=otps.reconstruct(v_harmonics,otps_times)
 # convert cm/s to m/s
 otps_u.result[:] *= 0.01 
-otps_v.result[:] *= 0.01 
+otps_v.result[:] *= 0.01
 
 ##
 
-# Pre-extract some fields from the ROMS data
-# Might move this to ca_roms.py in the future
-# This is pretty slow
-extracted=[]
-lat_da=xr.DataArray(g.edges['src_idx_out'][boundary_edges,0],dims='boundary')
-lon_da=xr.DataArray(g.edges['src_idx_out'][boundary_edges,1],dims='boundary')
+coastal_boundary_data=ca_roms.extract_data_at_boundary(coastal_files,g,boundary_edges)
 
-for ca_roms_file in ca_roms_files:
-    print(ca_roms_file)
-    ds=xr.open_dataset(ca_roms_file)
-    ds.load()
-    
-    # timestamps appear to be wrong in the files, always
-    # holding 2009-01-02.
-    # use the title, which appears to be consistent with the filename
-    # and the true time
-    t=utils.to_dt64( datetime.datetime.strptime(ds.title,'CA-%Y%m%d%H') )
-    ds.time.values[0]=t
-    
-    sub_ds=ds.isel(time=0).isel(lat=lat_da,lon=lon_da)
-    extracted.append(sub_ds)
-    ds.close()
-    
-roms_at_boundary=xr.concat(extracted,dim='time')
-
-## ----------
+## 
 
 os.path.exists(old_bc_fn) and os.unlink(old_bc_fn)
 
 # for adding in MSL => NAVD88 correction.  Just dumb luck that it's 1.0
+# Seems that both CA ROMS and HYCOM are relative to MSL.
 dfm_zeta_offset=1.0
 
 # average tidal prediction across boundary at start of simulation
@@ -253,109 +277,8 @@ zeta_ic = dfm_zeta_offset + np.interp(utils.to_dnum(run_start),
                                       otps_water_level.result.mean(dim='site'))
 mdu['geometry','WaterLevIni'] = zeta_ic
 
-
-def write_pli(src_name,j,suffix):
-    seg=g.nodes['x'][ g.edges['nodes'][j] ]
-    src_feat=(src_name,seg,[src_name+"_0001",src_name+"_0002"])
-    feat_suffix=dio.add_suffix_to_feature(src_feat,suffix)
-    dio.write_pli(os.path.join(run_base_dir,'%s%s.pli'%(src_name,suffix)),
-                  [feat_suffix])
-    return feat_suffix
-
-def write_tim(da,suffix,feat_suffix):
-    # Write the data:
-    columns=['elapsed_minutes']
-    if da.ndim==1: # yuck pandas.
-        df=da.to_dataframe().reset_index()
-        df['elapsed_minutes']=(df.time.values - ref_date)/np.timedelta64(60,'s')
-        columns.append(da.name)
-    else:
-        # it's a bit gross, but coercing pandas into putting a second dimension
-        # into separate columns is too annoying.
-        df=pd.DataFrame()
-        df['elapsed_minutes']=(da.time.values - ref_date)/np.timedelta64(60,'s')
-        for idx in range(da.shape[1]):
-            col_name='val%d'%idx
-            df[col_name]=da.values[:,idx]
-            columns.append(col_name)
-
-    if len(feat_suffix)==3:
-        node_names=feat_suffix[2]
-    else:
-        node_names=[""]*len(feat_suffix[1])
-
-    for node_idx,node_name in enumerate(node_names):
-        # if no node names are known, create the default name of <feature name>_0001
-        if not node_name:
-            node_name="%s%s_%04d"%(src_name,suffix,1+node_idx)
-
-        tim_fn=os.path.join(run_base_dir,node_name+".tim")
-        df.to_csv(tim_fn, sep=' ', index=False, header=False, columns=columns)
-        # remaining nodes should default to the same value as the first.
-        # break
-
-def write_t3d(da,suffix,feat_suffix,edge_depth,quantity='salinity'):
-    """
-    Write a 3D boundary condition for a feature from ROMS data
-     - most of the time writing boundaries is here
-    """
-    # Luckily the ROMS output does not lose any surface cells - so we don't
-    # have to worry about a surface cell in roms_at_boundary going nan.
-    assert da.ndim in [2,3]
-    
-    # get the depth of the internal cell:
-    valid_depths=np.all( np.isfinite( da.values ), axis=da.get_axis_num('time') )
-    valid_depth_idxs=np.nonzero(valid_depths)[0]
-
-    # ROMS values count from the surface, positive down.
-    # but DFM wants bottom-up.
-    # limit to valid depths, and reverse the order at the same time
-    roms_depth_slice=slice(valid_depth_idxs[-1],None,-1)
-
-    # This should be the right numbers, but reverse order
-    sigma = (-edge_depth - da.depth.values[roms_depth_slice]) / -edge_depth
-    # Force it to span the full water column
-    sigma[0]=min(0.0,sigma[0])
-    sigma[-1]=max(1.0,sigma[-1])
-
-    sigma_str=" ".join(["%.4f"%s for s in sigma])
-    elapsed_minutes=(da.time.values - ref_date)/np.timedelta64(60,'s')
-
-    # DBG:
-    # print("T3D sigma: %.3f to %.3f"%(sigma[0],sigma[-1]))
-    
-    ref_date_str=utils.to_datetime(ref_date).strftime('%Y-%m-%d %H:%M:%S')
-    
-    # assumes there are already node names
-    node_names=feat_suffix[2]
-
-    t3d_fns=[os.path.join(run_base_dir,node_name+".t3d")
-             for node_idx,node_name in enumerate(node_names) ]
-
-    assert da.dims[0]=='time' # for speed up of direct indexing
-    
-    # Write the first, then copy it to the second node
-    with open(t3d_fns[0],'wt') as fp:
-        fp.write("\n".join([
-            "LAYER_TYPE=sigma",
-            "LAYERS=%s"%sigma_str,
-            "VECTORMAX=%d"%(da.ndim-1), # default, but be explicit
-            "quant=%s"%quantity,
-            "quantity1=%s"%quantity, # why is this here?
-            "# start of data",
-            ""]))
-        for ti,t in enumerate(elapsed_minutes):
-            fp.write("TIME=%g minutes since %s\n"%(t,ref_date_str))
-            #data=" ".join( ["%.3f"%v for v in da.isel(time=ti).values[roms_depth_slice]] )
-            # Faster direct indexing:
-            # The ravel will interleave components - unclear if that's correct.
-            data=" ".join( ["%.3f"%v for v in da.values[ti,roms_depth_slice].ravel() ] )
-            fp.write(data)
-            fp.write("\n")
-            
-    for t3d_fn in t3d_fns[1:]:
-        shutil.copyfile(t3d_fns[0],t3d_fn)
-
+import common
+from common import write_pli, write_tim, write_t3d
 
 if 'edge_depth' in g.edges.dtype.names:
     edge_depth=g.edges['edge_depth']
@@ -368,6 +291,10 @@ for ji,j in enumerate(boundary_edges):
     
     depth=edge_depth[j]
 
+    print("DBG - forcing exactly one boundary!")
+    if ji!=10:
+        continue
+    
     if 1: # bring in OTPS harmonics:
         water_level=dfm_zeta_offset + otps_water_level.result.isel(site=ji)
 
@@ -378,71 +305,82 @@ for ji,j in enumerate(boundary_edges):
         veloc_uv.name='uv'
 
         # inward-positive
-        veloc_normal=g.edges['bc_norm_in'][j,0]*veloc_u + g.edges['bc_norm_in'][j,1]*veloc_v
+        # testing for reversed:
+        veloc_normal=(g.edges['bc_norm_in'][j,0]*veloc_u + g.edges['bc_norm_in'][j,1]*veloc_v)
         
-    if 1: # ROMS:        
-        if 1: # Add ROMS zeta to waterlevel
-            roms_water_level=roms_at_boundary.zeta.isel(boundary=ji)
-    
-            # 36h cutoff with 6h data.
-            # This will have some filtfilt trash at the end, probably okay
-            # at the beginning
-            roms_water_level.values[:] = filters.lowpass(roms_water_level.values,
-                                                         cutoff=36.,order=4,dt=6)
+    if 1: # Coastal model:        
+        coastal_dt=np.median( np.diff(coastal_boundary_data.time.values) )
+        coastal_dt_h= coastal_dt / np.timedelta64(3600,'s')
 
-            # As far as I know, ROMS zeta is relative to MSL
-            roms_interp=np.interp( utils.to_dnum(water_level.time),
-                                   utils.to_dnum(roms_water_level.time),
-                                   roms_water_level.values )
-            water_level.values += roms_interp
+        if 0: # Add Coastal model zeta to waterlevel
+            coastal_water_level=coastal_boundary_data.zeta.isel(boundary=ji)
+
+            if coastal_dt_h<12:
+                # 36h cutoff with 6h ROMS data
+                # Note that if the HYCOM fetch switches to finer resolution,
+                # it's unclear whether we want to filter it further or not, since
+                # it will be non-tidal.
+                # This will have some filtfilt trash at the end, probably okay
+                # at the beginning
+                coastal_water_level.values[:] = filters.lowpass(coastal_water_level.values,
+                                                                cutoff=36.,order=4,
+                                                                dt=coastal_dt_h)
+
+            # As far as I know, ROMS and HYCOM zeta are relative to MSL
+            coastal_interp=np.interp( utils.to_dnum(water_level.time),
+                                      utils.to_dnum(coastal_water_level.time),
+                                      coastal_water_level.values )
+            water_level.values += coastal_interp
             
         if 1: # salinity, temperature
             if 1: # proper spatial variation:
-                salinity_3d=roms_at_boundary.isel(boundary=ji).salt
-                temperature_3d=roms_at_boundary.isel(boundary=ji).temp
-                
-                for zi in range(len(salinity_3d.depth)):
-                    salinity_3d.values[:,zi] = filters.lowpass(salinity_3d.values[:,zi],
-                                                               cutoff=36,order=4,dt=6)
-                    temperature_3d.values[:,zi] = filters.lowpass(temperature_3d.values[:,zi],
-                                                                  cutoff=36,order=4,dt=6)
-
+                salinity_3d=coastal_boundary_data.isel(boundary=ji).salt
+                temperature_3d=coastal_boundary_data.isel(boundary=ji).temp
             else: # spatially constant
-                salinity_3d=roms_at_boundary.salt.mean(dim='boundary')
+                salinity_3d=coastal_boundary_data.salt.mean(dim='boundary')
+                temperature_3d=coastal_boundary_data.temp.mean(dim='boundary')
+
+            if coastal_dt_h<12:
                 for zi in range(len(salinity_3d.depth)):
                     salinity_3d.values[:,zi] = filters.lowpass(salinity_3d.values[:,zi],
-                                                               cutoff=36,order=4,dt=6)
+                                                               cutoff=36,order=4,dt=coastal_dt_h)
+                    temperature_3d.values[:,zi] = filters.lowpass(temperature_3d.values[:,zi],
+                                                                  cutoff=36,order=4,dt=coastal_dt_h)
 
-        if 1: # ROMS 3D velocity
-            roms_u=roms_at_boundary.isel(boundary=ji).u
-            roms_v=roms_at_boundary.isel(boundary=ji).v
-            
-            for zi in range(len(roms_u.depth)):
-                roms_u.values[:,zi] = filters.lowpass(roms_u.values[:,zi],
-                                                      cutoff=36,order=4,dt=6)
-                roms_v.values[:,zi] = filters.lowpass(roms_v.values[:,zi],
-                                                      cutoff=36,order=4,dt=6)
-            roms_uv=xr.DataArray( np.array([roms_u.values,roms_v.values]).transpose(1,2,0),
-                                  coords=[('time',roms_u.time),
-                                          ('depth',roms_u.depth),
-                                          ('comp',['e','n'])])
+        if 0: # 3D velocity
+            coastal_u=coastal_boundary_data.isel(boundary=ji).u
+            coastal_v=coastal_boundary_data.isel(boundary=ji).v
 
-    if 1: # depth-varying from tidal model+ROMS
+            for zi in range(len(coastal_u.depth)):
+                if coastal_max_sounding < coastal_u.depth[zi]:
+                    coastal_u.values[:,zi]=0.0
+                    coastal_v.values[:,zi]=0.0
+                else:
+                    if coastal_dt_h<12:
+                        coastal_u.values[:,zi] = filters.lowpass(roms_u.values[:,zi],
+                                                                 cutoff=36,order=4,dt=coastal_dt_h)
+                        coastal_v.values[:,zi] = filters.lowpass(roms_v.values[:,zi],
+                                                                 cutoff=36,order=4,dt=coastal_dt_h)
+            coastal_uv=xr.DataArray( np.array([coastal_u.values,coastal_v.values]).transpose(1,2,0),
+                                     coords=[('time',coastal_u.time),
+                                             ('depth',coastal_u.depth),
+                                             ('comp',['e','n'])])
+
+    if 0: # depth-varying from tidal model+ROMS
         # veloc_uv: has the tidal time scale
         # roms_u,roms_v: has the vertical variation
-        veloc_3d=xr.DataArray( np.zeros( (len(veloc_uv),len(roms_uv.depth),2) ),
-                            dims=['time','depth','comp'],
-                            coords={'time':veloc_uv.time,
-                                    'depth':roms_uv.depth} )
+        veloc_3d=xr.DataArray( np.zeros( (len(veloc_uv),len(coastal_uv.depth),2) ),
+                               dims=['time','depth','comp'],
+                               coords={'time':veloc_uv.time,
+                                       'depth':roms_uv.depth} )
         # This will broadcast tidal velocity over depth
         veloc_3d+=veloc_uv
         # And this is supposed grab nearest-in-time ROMS velocity to add in.
         # Note that nearest just pulls an existing record, but retains the
         # original time value, so grab the values directly
-        veloc_3d.values+=roms_uv.sel(time=veloc_3d.time,method='nearest').values
+        veloc_3d.values+=coastal_uv.sel(time=veloc_3d.time,method='nearest').values
         veloc_3d.name='uv'
 
-        
     # Include velocity in riemann BC:
     #   from page 124 of the user manual:
     #   zeta = 2*zeta_b - sqrt(H/g)*u - zeta_0
@@ -473,11 +411,26 @@ for ji,j in enumerate(boundary_edges):
             forcing_data.append( ('riemannbnd',riemann,'_rmn') )
 
     if 1: # waterlevel in shallow areas, velocity elsewhere
-        if depth>-200:
+        # waterlevel in shallow areas has not been that great..
+        # forcing large fluxes through shallow areas to make up for
+        # large scale volume errors.
+        # For short_21, use entirely velocities
+        #if (depth>-200) or (ji%10==0):
+        #if (depth<-200) and (ji%10==0):
+        if False:
             forcing_data.append( ('waterlevelbnd',water_level,'_ssh') )
         else:
-            # HERE -refactor the advection velocity from below to here.
-            forcing_data.append( ('velocitybnd',veloc_3d,'_uv3') )
+            # This maybe was causing issues around 3.5 hours in
+            # forcing_data.append( ('velocitybnd',veloc_3d,'_uv3') )
+            # Try the simpler forcing -- this is getting some memory
+            # errors -- somewhere in the processing of velocity bcs
+            # it overwrites some geometry link info
+            # forcing_data.append( ('velocitybnd',veloc_uv,'_uv') )
+
+            # Maybe it was wrong to use vector velocity with
+            # velocitybnd.
+            # try just normal velocity?
+            forcing_data.append( ('velocitybnd',veloc_normal,'_un') )
             
     if 0: # included advected velocity -- cannot coexist with velocitybnd
         forcing_data.append( ('uxuyadvectionvelocitybnd',veloc_3d,'_uv3') )
@@ -492,31 +445,29 @@ for ji,j in enumerate(boundary_edges):
                    "\n"]
             fp.write("\n".join(lines))
 
-        feat_suffix=write_pli(src_name,j,suffix)
+        feat_suffix=write_pli(g,run_base_dir,src_name,j,suffix)
         
         if 'depth' in da.dims:
             write_t3d(da,suffix,feat_suffix,edge_depth[j],
-                      quantity=quant.replace('bnd','') )
+                      quantity=quant.replace('bnd',''),
+                      mdu=mdu)
         else:
-            write_tim(da,suffix,feat_suffix)
+            write_tim(da,suffix,feat_suffix,mdu=mdu)
             
 ## 
 
 # Write spatially-variable horizontal eddy viscosity field
-# with background value of 10, and 1000 near
-# the boundary.
-
 ca_roms.add_sponge_layer(mdu,run_base_dir,g,boundary_edges,
-                         sponge_visc=1000,
+                         sponge_visc=5000,
                          background_visc=10,
-                         sponge_L=25000,quantity='viscosity')
+                         sponge_L=50000,quantity='viscosity')
 
 # For diffusivity, have to use smaller background number so that
 # freshwater inflows are not driven by diffusion
 ca_roms.add_sponge_layer(mdu,run_base_dir,g,boundary_edges,
-                         sponge_visc=1000,
+                         sponge_visc=5000,
                          background_visc=0.001,
-                         sponge_L=25000,quantity='diffusivity')
+                         sponge_L=50000,quantity='diffusivity')
 
 ##
 
@@ -575,7 +526,6 @@ if include_fresh:
         # Developing freshwater inputs for periods not covered by BAHM, but covered by
         # a subset of USGS gages.
         from sfb_dfm_utils import sfbay_scaled_watersheds
-        six.moves.reload_module(sfbay_scaled_watersheds)
         sfbay_scaled_watersheds.add_sfbay_freshwater(mdu,
                                                      'inputs-static/watershed_inflow_locations.shp',
                                                      g,dredge_depth)
@@ -619,7 +569,8 @@ if 1:
                        overwrite=True)
 
 # This step is pretty slow the first time around.
-coamps.add_coamps_to_mdu(mdu,run_base_dir,g,use_existing=True)
+if use_wind:
+    coamps.add_coamps_to_mdu(mdu,run_base_dir,g,use_existing=True)
 
 
 ##
@@ -627,10 +578,11 @@ coamps.add_coamps_to_mdu(mdu,run_base_dir,g,use_existing=True)
 # Setting a full 3D initial condition requires a partitioned
 # run, so go ahead partition now:
 
-nprocs=16
 
-
+dfm_output_count=0
 def dflowfm(mdu_fn,args=['--autostartstop']):
+    global dfm_output_count
+    
     cmd=[os.path.join(dfm_bin_dir,"dflowfm")] + args
     if mdu_fn is not None:
         cmd.append(os.path.basename(mdu_fn))
@@ -641,11 +593,16 @@ def dflowfm(mdu_fn,args=['--autostartstop']):
     # This is more backwards compatible than 
     # passing cwd to subprocess()
     pwd=os.getcwd()
-    try:
-        os.chdir(run_base_dir)
-        res=subprocess.call(cmd)
-    finally:
-        os.chdir(pwd)
+    dfm_output_count+=1
+    log_file= os.path.join(run_base_dir,'dflowfm-log-%d.log'%dfm_output_count)
+    with open(log_file, 'wt') as fp:
+        log.info("Command '%s' logging to %s"%(cmd,log_file))
+        try:
+            os.chdir(run_base_dir)
+            res=subprocess.call(cmd,stderr=subprocess.STDOUT,stdout=fp)
+        finally:
+            os.chdir(pwd)
+            log.info("Command '%s' completed"%cmd)
     return res
 
 
@@ -747,9 +704,17 @@ if set_3d_ic:
                 temp_extrap_field.build_index()
                 missing_val=-999
             else:
-                missing_val=20
+                missing_val=32
 
-            snap=src.isel(time=[0])
+            # Scan the coastal model files, find one close to our start date
+            for fn in coastal_files:
+                snap=xr.open_dataset(fn)
+                if snap.time.ndim>0:
+                    snap=snap.isel(time=0)
+                if snap.time>run_start:
+                    print("Will use %s for initial condition"%fn)
+                    break
+                snap.close()
 
             for ic_fn,map_fn in zip(ic_fns,map_fns):
                 ic_map=ca_roms.set_ic_from_map_output(snap,
@@ -764,23 +729,24 @@ if set_3d_ic:
                     all_xy=np.c_[ ic_map.FlowElem_xcc.values,
                                   ic_map.FlowElem_ycc.values ]
 
-                    # Salinity:
-                    #  fill missing values in ic_map.sa1 with the 2D extrapolated data
-                    salt_fill_2d=salt_extrap_field.interpolate(all_xy,interpolation='nearest') # 2-3 seconds
-                    salt_fill_3d=xr.DataArray(salt_fill_2d,dims=['nFlowElem'])
-                    _,salt_fill_3dx=xr.broadcast(ic_map.sa1,salt_fill_3d)
-                    sa1=ic_map.sa1
-                    new_sa1=sa1.where(sa1!=missing_val,other=salt_fill_3dx)
-                    ic_map['sa1']=new_sa1
-
-                    # Temperature:
-                    #  fill missing values in ic_map.tem1 with the 2D extrapolated data
-                    temp_fill_2d=temp_extrap_field.interpolate(all_xy,interpolation='nearest') # 2-3 seconds
-                    temp_fill_3d=xr.DataArray(temp_fill_2d,dims=['nFlowElem'])
-                    _,temp_fill_3dx=xr.broadcast(ic_map.tem1,temp_fill_3d)
-                    tem1=ic_map.tem1
-                    new_tem1=tem1.where(tem1!=missing_val,other=temp_fill_3dx)
-                    ic_map['tem1']=new_tem1
+                    if mdu['physics','Salinity']=="1":
+                        # Salinity:
+                        #  fill missing values in ic_map.sa1 with the 2D extrapolated data
+                        salt_fill_2d=salt_extrap_field.interpolate(all_xy,interpolation='nearest') # 2-3 seconds
+                        salt_fill_3d=xr.DataArray(salt_fill_2d,dims=['nFlowElem'])
+                        _,salt_fill_3dx=xr.broadcast(ic_map.sa1,salt_fill_3d)
+                        sa1=ic_map.sa1
+                        new_sa1=sa1.where(sa1!=missing_val,other=salt_fill_3dx)
+                        ic_map['sa1']=new_sa1
+                    if mdu['physics','Temperature']=="1":
+                        # Temperature:
+                        #  fill missing values in ic_map.tem1 with the 2D extrapolated data
+                        temp_fill_2d=temp_extrap_field.interpolate(all_xy,interpolation='nearest') # 2-3 seconds
+                        temp_fill_3d=xr.DataArray(temp_fill_2d,dims=['nFlowElem'])
+                        _,temp_fill_3dx=xr.broadcast(ic_map.tem1,temp_fill_3d)
+                        tem1=ic_map.tem1
+                        new_tem1=tem1.where(tem1!=missing_val,other=temp_fill_3dx)
+                        ic_map['tem1']=new_tem1
 
                 ic_map.to_netcdf(ic_fn,format='NETCDF3_64BIT')
         else:
