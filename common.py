@@ -71,6 +71,11 @@ def write_t3d(da,suffix,feat_suffix,edge_depth,quantity,mdu):
     
     # get the depth of the internal cell:
     valid_depths=np.all( np.isfinite( da.values ), axis=da.get_axis_num('time') )
+
+    valid_depths = valid_depths & (-da.depth.values > edge_depth)
+    # if this becomes a problem, may have to fill in backup value?  
+    assert valid_depths[0],"No valid layers in Coastal model data"
+
     valid_depth_idxs=np.nonzero(valid_depths)[0]
 
     # ROMS values count from the surface, positive down.
@@ -80,6 +85,7 @@ def write_t3d(da,suffix,feat_suffix,edge_depth,quantity,mdu):
 
     # This should be the right numbers, but reverse order
     sigma = (-edge_depth - da.depth.values[roms_depth_slice]) / -edge_depth
+
     # Force it to span the full water column
     sigma[0]=min(0.0,sigma[0])
     sigma[-1]=max(1.0,sigma[-1])
