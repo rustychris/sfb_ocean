@@ -67,7 +67,10 @@ mdu=dio.MDUFile('template.mdu')
 # short_20: and switch to HYCOM
 # short_21: now OTPS velocities, no freesurface BCs
 # short_22: reduce to a SINGLE velocity BC to see if it is showing up correctly.
-run_name="short_22"
+# short_23: apply at most one BC to each cell
+# short_24: apply constant flows with "label" values
+# short_25: check for z-layer issue
+run_name="short_25"
 
 include_fresh=False # or True
 layers='z' # or 'sigma'
@@ -98,8 +101,7 @@ if layers=='sigma':
     mdu['geometry','SigmaGrowthFactor']=1
 
 run_start=ref_date=np.datetime64('2017-07-01')
-# run_stop=np.datetime64('2017-10-30')
-run_stop=np.datetime64('2017-07-06')
+run_stop=np.datetime64('2017-08-01')
 
 mdu.set_time_range(start=run_start,
                    stop=run_stop,
@@ -291,10 +293,6 @@ for ji,j in enumerate(boundary_edges):
     
     depth=edge_depth[j]
 
-    print("DBG - forcing exactly one boundary!")
-    if ji!=10:
-        continue
-    
     if 1: # bring in OTPS harmonics:
         water_level=dfm_zeta_offset + otps_water_level.result.isel(site=ji)
 
@@ -305,7 +303,6 @@ for ji,j in enumerate(boundary_edges):
         veloc_uv.name='uv'
 
         # inward-positive
-        # testing for reversed:
         veloc_normal=(g.edges['bc_norm_in'][j,0]*veloc_u + g.edges['bc_norm_in'][j,1]*veloc_v)
         
     if 1: # Coastal model:        
@@ -357,29 +354,37 @@ for ji,j in enumerate(boundary_edges):
                     coastal_v.values[:,zi]=0.0
                 else:
                     if coastal_dt_h<12:
-                        coastal_u.values[:,zi] = filters.lowpass(roms_u.values[:,zi],
+                        coastal_u.values[:,zi] = filters.lowpass(coastal_u.values[:,zi],
                                                                  cutoff=36,order=4,dt=coastal_dt_h)
-                        coastal_v.values[:,zi] = filters.lowpass(roms_v.values[:,zi],
+                        coastal_v.values[:,zi] = filters.lowpass(coastal_v.values[:,zi],
                                                                  cutoff=36,order=4,dt=coastal_dt_h)
             coastal_uv=xr.DataArray( np.array([coastal_u.values,coastal_v.values]).transpose(1,2,0),
                                      coords=[('time',coastal_u.time),
                                              ('depth',coastal_u.depth),
                                              ('comp',['e','n'])])
+            # inward facing normal for this boundary edge
+            inward_nx,inward_ny = g.edges['bc_norm_in'][j]
+            coastal_normal=xr.DataArray( inward_nx*coastal_u.values+inward_ny*coastal_v.values,
+                                         coords=[('time',coastal_u.time),
+                                                 ('depth',coastal_u.depth)])
 
     if 0: # depth-varying from tidal model+ROMS
         # veloc_uv: has the tidal time scale
         # roms_u,roms_v: has the vertical variation
-        veloc_3d=xr.DataArray( np.zeros( (len(veloc_uv),len(coastal_uv.depth),2) ),
-                               dims=['time','depth','comp'],
-                               coords={'time':veloc_uv.time,
-                                       'depth':roms_uv.depth} )
+        # Used to prescribe u,v vector velocity, but I think it's supposed to just
+        # be normal velocity.
+        veloc_3d=xr.DataArray( np.zeros( (len(veloc_normal),len(coastal_normal.depth)) ),
+                               dims=['time','depth'],
+                               coords={'time':veloc_normal.time,
+                                       'depth':coastal_normal.depth} )
         # This will broadcast tidal velocity over depth
-        veloc_3d+=veloc_uv
-        # And this is supposed grab nearest-in-time ROMS velocity to add in.
-        # Note that nearest just pulls an existing record, but retains the
-        # original time value, so grab the values directly
-        veloc_3d.values+=coastal_uv.sel(time=veloc_3d.time,method='nearest').values
-        veloc_3d.name='uv'
+        veloc_3d+=veloc_normal
+        if 0: # not yet adding this in
+            # And this is supposed grab nearest-in-time ROMS velocity to add in.
+            # Note that nearest just pulls an existing record, but retains the
+            # original time value, so grab the values directly
+            veloc_3d.values+=coastal_normal.sel(time=veloc_3d.time,method='nearest').values
+            veloc_3d.name='un'
 
     # Include velocity in riemann BC:
     #   from page 124 of the user manual:
