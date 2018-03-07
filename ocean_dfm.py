@@ -70,7 +70,8 @@ mdu=dio.MDUFile('template.mdu')
 # short_23: apply at most one BC to each cell
 # short_24: apply constant flows with "label" values
 # short_25: check for z-layer issue
-run_name="short_25"
+# short_26: back to 3D, z-layer, salt, temp.
+run_name="short_26"
 
 include_fresh=False # or True
 layers='z' # or 'sigma'
@@ -421,20 +422,10 @@ for ji,j in enumerate(boundary_edges):
         # large scale volume errors.
         # For short_21, use entirely velocities
         #if (depth>-200) or (ji%10==0):
-        #if (depth<-200) and (ji%10==0):
-        if False:
+        if depth<-1000:
             forcing_data.append( ('waterlevelbnd',water_level,'_ssh') )
         else:
-            # This maybe was causing issues around 3.5 hours in
-            # forcing_data.append( ('velocitybnd',veloc_3d,'_uv3') )
-            # Try the simpler forcing -- this is getting some memory
-            # errors -- somewhere in the processing of velocity bcs
-            # it overwrites some geometry link info
-            # forcing_data.append( ('velocitybnd',veloc_uv,'_uv') )
-
-            # Maybe it was wrong to use vector velocity with
-            # velocitybnd.
-            # try just normal velocity?
+            # Use normal velocity, not vector
             forcing_data.append( ('velocitybnd',veloc_normal,'_un') )
             
     if 0: # included advected velocity -- cannot coexist with velocitybnd
