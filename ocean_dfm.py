@@ -70,17 +70,21 @@ mdu=dio.MDUFile('template.mdu')
 # short_23: apply at most one BC to each cell
 # short_24: apply constant flows with "label" values
 # short_25: check for z-layer issue
-# short_26: back to 3D, z-layer, salt, temp.
-run_name="short_26"
+# short_26: back to 3D, z-layer, salt, temp. set water level on <1000m
+# short_27: further adjust to which ocean BCs are forced.  set closed on < 1000m
+# short_28: set closed on < 100.
+# short_29: 2D, flat-bottomed domain, no temp,salt
+run_name="short_29"
 
 include_fresh=False # or True
 layers='z' # or 'sigma'
 grid='ragged_coast' # 'rectangle_coast' 'ragged_full', ...
 nprocs=1 # 16
-mdu['physics','Temperature']=1
-mdu['physics','Salinity']=1
+mdu['physics','Temperature']=0
+mdu['physics','Salinity']=0
 use_wind=False
-# not implemented otps_flux=True # use fluxes rather than velocities from OTPS
+otps_flux=True # True => use fluxes rather than velocities from OTPS
+flux_factor=1.0 # looking for salvation in random scaling of fluxes.
 
 coastal_source=['otps','hycom'] # 'roms'
 
@@ -89,6 +93,8 @@ coastal_source=['otps','hycom'] # 'roms'
 coastal_max_sounding=20000 # allow all depths
 set_3d_ic=True
 extrap_bay=False # for 3D initial condition whether to extrapolated data inside the Bay.
+kmx=10 # number of layers
+flat_bottom=-1000 # if other than None, the uniform depth of the domain
 
 ##
 
@@ -97,7 +103,8 @@ os.path.exists(run_base_dir) or os.makedirs(run_base_dir)
 
 mdu.set_filename(os.path.join(run_base_dir,run_name+".mdu"))
 
-mdu['geometry','Kmx']=20
+mdu['geometry','Kmx']=kmx
+
 if layers=='sigma':
     mdu['geometry','SigmaGrowthFactor']=1
 
@@ -142,11 +149,12 @@ if layers=='z':
         mdu['output','FullGridOutput']    = 1
 elif layers=='sigma':
     mdu['geometry','Layertype']=1 # sigma
-    if 1: # 
+    if kmx==20: # 
         mdu['geometry','StretchType']=1 # user defined 
         # These must sum exactly to 100.
         mdu['geometry','StretchCoef']="8 8 7 7 6 6 6 6 5 5 5 5 5 5 5 5 2 2 1 1"
     else:
+        print("USING UNIFORM SIGMA LAYERS")
         mdu['geometry','StretchType']=0 # uniform
 else:
     raise Exception("bad layer choice '%s'"%layers)
@@ -208,6 +216,11 @@ elif grid=='ragged_splice': # Spliced grid generated in splice_grids.py
                         [595426., 4037083.] ] # southern
 else:
     raise Exception("Unknown grid %s"%grid)
+
+##
+
+if flat_bottom is not None:
+    g.nodes['depth'][:]=flat_bottom
 ## 
 
 # Identify ocean boundary edges
@@ -243,23 +256,38 @@ Otps=otps.otps_model.OTPS('/home/rusty/src/otps/OTPS2', # Locations of the OTPS 
                           '/opt/data/otps') # location of the data
 
 # xy for boundary edges:
-boundary_out_lats=src.lat.values[ g.edges['src_idx_out'][boundary_edges,0] ]
-boundary_out_lons=(src.lon.values[ g.edges['src_idx_out'][boundary_edges,1] ] + 180) % 360 - 180
-boundary_out_ll=np.c_[boundary_out_lons,boundary_out_lats]
+if 1: # use lat/lon of ocean model cell on the outside
+    boundary_out_lats=src.lat.values[ g.edges['src_idx_out'][boundary_edges,0] ]
+    boundary_out_lons=(src.lon.values[ g.edges['src_idx_out'][boundary_edges,1] ] + 180) % 360 - 180
+    boundary_out_ll=np.c_[boundary_out_lons,boundary_out_lats]
+else: # use center of edge itself.
+    boundary_edge_xy=g.edges_center()[boundary_edges]
+    boundary_out_ll=utm2ll(boundary_edge_xy)
 
 z_harmonics = Otps.extract_HC( boundary_out_ll )
-u_harmonics = Otps.extract_HC( boundary_out_ll, quant='u')
-v_harmonics = Otps.extract_HC( boundary_out_ll, quant='v')
+if otps_flux:
+    # These are in m2/s
+    U_harmonics = Otps.extract_HC( boundary_out_ll, quant='U')
+    V_harmonics = Otps.extract_HC( boundary_out_ll, quant='V')
+else:
+    u_harmonics = Otps.extract_HC( boundary_out_ll, quant='u')
+    v_harmonics = Otps.extract_HC( boundary_out_ll, quant='v')
 
 pad=np.timedelta64(2,'D')
 otps_times=np.arange(run_start-pad, run_stop+pad,
                      np.timedelta64(600,'s'))
 otps_water_level=otps.reconstruct(z_harmonics,otps_times)
-otps_u=otps.reconstruct(u_harmonics,otps_times)
-otps_v=otps.reconstruct(v_harmonics,otps_times)
-# convert cm/s to m/s
-otps_u.result[:] *= 0.01 
-otps_v.result[:] *= 0.01
+
+if otps_flux:
+    # [m2/s]
+    otps_U=otps.reconstruct(U_harmonics,otps_times)
+    otps_V=otps.reconstruct(V_harmonics,otps_times)
+else:
+    otps_u=otps.reconstruct(u_harmonics,otps_times)
+    otps_v=otps.reconstruct(v_harmonics,otps_times)
+    # convert cm/s to m/s
+    otps_u.result[:] *= 0.01 
+    otps_v.result[:] *= 0.01
 
 ##
 
@@ -280,31 +308,58 @@ zeta_ic = dfm_zeta_offset + np.interp(utils.to_dnum(run_start),
                                       otps_water_level.result.mean(dim='site'))
 mdu['geometry','WaterLevIni'] = zeta_ic
 
+
+if layers=='z':
+    # positive-up values, from the bed to the surface
+    # DFM uses the node depths
+    layer_breaks=dio.exp_z_layers(mdu,zmin=g.nodes['depth'].min())
+    stairstepped= int(mdu['numerics','Keepzlayeringatbed'])!=0
+else:
+    stairstepped=False
+
 import common
 from common import write_pli, write_tim, write_t3d
 
-if 'edge_depth' in g.edges.dtype.names:
-    edge_depth=g.edges['edge_depth']
-else:
-    edge_depth=g.nodes['depth'][ g.edges['nodes'] ].mean(axis=1)
-                                                         
+#if 'edge_depth' in g.edges.dtype.names:
+#    edge_depth=g.edges['edge_depth']
+#else:
+edge_depth=g.nodes['depth'][ g.edges['nodes'] ].min(axis=1)
+
+# For debugging - sum the fluxes
+edge_lengths=g.edges_length()
+total_flux=0
+
 for ji,j in enumerate(boundary_edges):
     src_name='oce%05d'%j
     print(src_name)
-    
-    depth=edge_depth[j]
+
+    if stairstepped:
+        layer_i=np.searchsorted(layer_breaks,edge_depth[j],side='right').clip(1,np.inf)-1
+        depth=layer_breaks[layer_i]
+        print("  Depth %.1f => %.1f"%(edge_depth[j],depth))
+    else:
+        depth=edge_depth[j]
 
     if 1: # bring in OTPS harmonics:
         water_level=dfm_zeta_offset + otps_water_level.result.isel(site=ji)
 
-        veloc_u=otps_u.result.isel(site=ji)
-        veloc_v=otps_v.result.isel(site=ji)
+        if otps_flux:
+            # normalize by rough calc of water column depth
+            print("Normalizing by depth = %.2f"%( dfm_zeta_offset - depth))
+            veloc_u=flux_factor*otps_U.result.isel(site=ji) / (dfm_zeta_offset-depth)
+            veloc_v=flux_factor*otps_V.result.isel(site=ji) / (dfm_zeta_offset-depth)
+            
+        else:
+            veloc_u=otps_u.result.isel(site=ji)
+            veloc_v=otps_v.result.isel(site=ji)
         veloc_uv=xr.DataArray(np.c_[veloc_u.values,veloc_v.values],
                               coords=[('time',veloc_u.time),('comp',['e','n'])])
         veloc_uv.name='uv'
 
         # inward-positive
         veloc_normal=(g.edges['bc_norm_in'][j,0]*veloc_u + g.edges['bc_norm_in'][j,1]*veloc_v)
+
+        total_flux = total_flux + veloc_normal * depth * edge_lengths[j]
         
     if 1: # Coastal model:        
         coastal_dt=np.median( np.diff(coastal_boundary_data.time.values) )
@@ -420,10 +475,11 @@ for ji,j in enumerate(boundary_edges):
         # waterlevel in shallow areas has not been that great..
         # forcing large fluxes through shallow areas to make up for
         # large scale volume errors.
-        # For short_21, use entirely velocities
-        #if (depth>-200) or (ji%10==0):
-        if depth<-1000:
-            forcing_data.append( ('waterlevelbnd',water_level,'_ssh') )
+        if depth>-400:
+            # forcing_data.append( ('waterlevelbnd',water_level,'_ssh') )
+            # Just skip these, to see if the tidal range comes back in line
+            print("Edge with depth=%g closed for shallowness"%depth)
+            continue
         else:
             # Use normal velocity, not vector
             forcing_data.append( ('velocitybnd',veloc_normal,'_un') )
@@ -467,7 +523,7 @@ ca_roms.add_sponge_layer(mdu,run_base_dir,g,boundary_edges,
 
 ##
 
-if 1:
+if 0:
     obs_shp_fn = "inputs-static/observation-points.shp"
     # Observation points taken from shapefile for easier editing/comparisons in GIS
     obs_pnts=wkb2shp.shp2geom(obs_shp_fn)
