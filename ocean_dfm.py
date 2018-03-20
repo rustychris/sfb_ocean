@@ -33,8 +33,9 @@ from stompy.grid import unstructured_grid
 
 import sfb_dfm_utils
 
-## 
-dfm_bin_dir="/opt/software/delft/dfm/r53925-opt/bin"
+##
+# 52184 is possibly better for velocity BCs
+dfm_bin_dir="/opt/software/delft/dfm/r52184-opt/bin"
 
 utm2ll=proj_utils.mapper('EPSG:26910','WGS84')
 ll2utm=proj_utils.mapper('WGS84','EPSG:26910')
@@ -73,8 +74,10 @@ mdu=dio.MDUFile('template.mdu')
 # short_26: back to 3D, z-layer, salt, temp. set water level on <1000m
 # short_27: further adjust to which ocean BCs are forced.  set closed on < 1000m
 # short_28: set closed on < 100.
-# short_29: 2D, flat-bottomed domain, no temp,salt
-run_name="short_29"
+# short_29: 2D, flat-bottomed domain, no temp,salt.  With r52184, this gets decent tides.
+# short_30: 3D, flat-bottomed domain, no temp,salt.
+# short_31: 3D, real bottom, no temp, no salt.
+run_name="short_31"
 
 include_fresh=False # or True
 layers='z' # or 'sigma'
@@ -91,10 +94,10 @@ coastal_source=['otps','hycom'] # 'roms'
 # ROMS has some wacky data, especially at depth.  set this to True to zero out
 # data below a certain depth (written as positive-down sounding)
 coastal_max_sounding=20000 # allow all depths
-set_3d_ic=True
+set_3d_ic=False
 extrap_bay=False # for 3D initial condition whether to extrapolated data inside the Bay.
-kmx=10 # number of layers
-flat_bottom=-1000 # if other than None, the uniform depth of the domain
+kmx=20 # number of layers
+flat_bottom=None # if other than None, the uniform depth of the domain
 
 ##
 
@@ -140,7 +143,9 @@ if layers=='z':
         # surface percentage, ignored, bottom percentage
         # mdu['geometry','StretchCoef']="0.002 0.02 0.8"
         # This gives about 2m surface cells, and O(500m) deep layers.
-        mdu['geometry','StretchCoef']="0.0003 0.02 0.7"
+        #mdu['geometry','StretchCoef']="0.0003 0.02 0.7"
+        # this should move the first interface down to below -1m for max depth 1000
+        mdu['geometry','StretchCoef']="0.002 0.02 0.7"
         mdu['numerics','Zwsbtol'] = 0.0 # that's the default anyway...
         # This is the safer of the options, but gives a stairstepped bed.
         mdu['numerics','Keepzlayeringatbed']=1
