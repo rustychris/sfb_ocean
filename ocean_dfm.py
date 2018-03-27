@@ -77,15 +77,19 @@ mdu=dio.MDUFile('template.mdu')
 # short_29: 2D, flat-bottomed domain, no temp,salt.  With r52184, this gets decent tides.
 # short_30: 3D, flat-bottomed domain, no temp,salt.
 # short_31: 3D, real bottom, no temp, no salt.
-run_name="short_31"
+# short_32: 3D, real bottom, temperature and salinity
+# short_33: apply s,T even on otherwise closed, shallow boundaries.  Fixed layering in BCs.
+# short_34: bringing wind back in.  So far so good.
+# short_35: velocity profiles.  May back out of this...
+run_name="short_35"
 
 include_fresh=False # or True
 layers='z' # or 'sigma'
 grid='ragged_coast' # 'rectangle_coast' 'ragged_full', ...
 nprocs=1 # 16
-mdu['physics','Temperature']=0
-mdu['physics','Salinity']=0
-use_wind=False
+mdu['physics','Temperature']=1
+mdu['physics','Salinity']=1
+use_wind=True
 otps_flux=True # True => use fluxes rather than velocities from OTPS
 flux_factor=1.0 # looking for salvation in random scaling of fluxes.
 
@@ -94,7 +98,7 @@ coastal_source=['otps','hycom'] # 'roms'
 # ROMS has some wacky data, especially at depth.  set this to True to zero out
 # data below a certain depth (written as positive-down sounding)
 coastal_max_sounding=20000 # allow all depths
-set_3d_ic=False
+set_3d_ic=True
 extrap_bay=False # for 3D initial condition whether to extrapolated data inside the Bay.
 kmx=20 # number of layers
 flat_bottom=None # if other than None, the uniform depth of the domain
@@ -170,7 +174,7 @@ old_bc_fn = os.path.join(run_base_dir,mdu['external forcing','ExtForceFile'])
 
 from sfb_dfm_utils import ca_roms, coamps, hycom
 
-# Get the ROMS inputs:
+# Get the coastal model inputs:
 coastal_pad=np.timedelta64(10,'D') # lots of padding to avoid ringing from butterworth
 coastal_time_range=[run_start-coastal_pad,run_stop+coastal_pad]
 if 'roms' in coastal_source:
@@ -180,7 +184,6 @@ elif 'hycom' in coastal_source:
     # since the cached data relies on the ll ranges matching up.
     hycom_lon_range=[-124.7, -121.7 ]
     hycom_lat_range=[36.2, 38.85]
-
     coastal_files=hycom.fetch_range(hycom_lon_range,hycom_lat_range,coastal_time_range)
 else:
     coastal_files=None
@@ -325,9 +328,8 @@ else:
 import common
 from common import write_pli, write_tim, write_t3d
 
-#if 'edge_depth' in g.edges.dtype.names:
-#    edge_depth=g.edges['edge_depth']
-#else:
+# This definition of edge depth I think is more consistent with the DFM settings
+# (compared to using g.edges['edge_depth'] which may or may not exist)
 edge_depth=g.nodes['depth'][ g.edges['nodes'] ].min(axis=1)
 
 # For debugging - sum the fluxes
@@ -405,7 +407,7 @@ for ji,j in enumerate(boundary_edges):
                     temperature_3d.values[:,zi] = filters.lowpass(temperature_3d.values[:,zi],
                                                                   cutoff=36,order=4,dt=coastal_dt_h)
 
-        if 0: # 3D velocity
+        if 1: # 3D velocity
             coastal_u=coastal_boundary_data.isel(boundary=ji).u
             coastal_v=coastal_boundary_data.isel(boundary=ji).v
 
@@ -429,7 +431,7 @@ for ji,j in enumerate(boundary_edges):
                                          coords=[('time',coastal_u.time),
                                                  ('depth',coastal_u.depth)])
 
-    if 0: # depth-varying from tidal model+ROMS
+    if 1: # depth-varying from tidal model+ROMS
         # veloc_uv: has the tidal time scale
         # roms_u,roms_v: has the vertical variation
         # Used to prescribe u,v vector velocity, but I think it's supposed to just
@@ -440,21 +442,12 @@ for ji,j in enumerate(boundary_edges):
                                        'depth':coastal_normal.depth} )
         # This will broadcast tidal velocity over depth
         veloc_3d+=veloc_normal
-        if 0: # not yet adding this in
+        if 1: # feeling lucky?
             # And this is supposed grab nearest-in-time ROMS velocity to add in.
             # Note that nearest just pulls an existing record, but retains the
             # original time value, so grab the values directly
             veloc_3d.values+=coastal_normal.sel(time=veloc_3d.time,method='nearest').values
             veloc_3d.name='un'
-
-    # Include velocity in riemann BC:
-    #   from page 124 of the user manual:
-    #   zeta = 2*zeta_b - sqrt(H/g)*u - zeta_0
-    #   zeta_0 is initial water level, aka zeta_ic
-    #   if zeta is what we want the water level to be,
-    #   and zeta_b is what we give to DFM, then
-    #   zeta_b=0.5*( zeta+zeta_0 + sqrt(H/g)*u)
-    riemann=0.5*(water_level + zeta_ic + np.sqrt(np.abs(depth)/9.8)*veloc_normal)
                 
     assert np.all( np.isfinite(water_level.values) ) # sanity check
 
@@ -466,8 +459,18 @@ for ji,j in enumerate(boundary_edges):
     if int(mdu['physics','Temperature']):
         forcing_data.append( ('temperaturebnd',temperature_3d,'_temp') )
         
+
+    # Include velocity in riemann BC:
+    #   from page 124 of the user manual:
+    #   zeta = 2*zeta_b - sqrt(H/g)*u - zeta_0
+    #   zeta_0 is initial water level, aka zeta_ic
+    #   if zeta is what we want the water level to be,
+    #   and zeta_b is what we give to DFM, then
+    #   zeta_b=0.5*( zeta+zeta_0 + sqrt(H/g)*u)
+    riemann=0.5*(water_level + zeta_ic + np.sqrt(np.abs(depth)/9.8)*veloc_normal)
     if 0: # riemann only
-        # This works pretty well, good agreement at Point Reyes.
+        # This works pretty well until density comes into play.
+        # good agreement at Point Reyes.
         forcing_data.append( ('riemannbnd',riemann,'_rmn') )
 
     if 0: # Riemann only in shallow areas:
@@ -481,13 +484,16 @@ for ji,j in enumerate(boundary_edges):
         # forcing large fluxes through shallow areas to make up for
         # large scale volume errors.
         if depth>-400:
-            # forcing_data.append( ('waterlevelbnd',water_level,'_ssh') )
-            # Just skip these, to see if the tidal range comes back in line
+            # These are forced with zero velocity, but that makes them open
+            # and then we can still put salinity/temperature on that boundary
             print("Edge with depth=%g closed for shallowness"%depth)
-            continue
+            forcing_data.append( ('velocitybnd',0*veloc_normal,'_un') )
         else:
             # Use normal velocity, not vector
-            forcing_data.append( ('velocitybnd',veloc_normal,'_un') )
+            # This has been working well
+            # forcing_data.append( ('velocitybnd',veloc_normal,'_un') )
+            # But take the plunge and try 3D velocity
+            forcing_data.append( ('velocitybnd',veloc_3d,'_un') )
             
     if 0: # included advected velocity -- cannot coexist with velocitybnd
         forcing_data.append( ('uxuyadvectionvelocitybnd',veloc_3d,'_uv3') )
@@ -761,7 +767,7 @@ if set_3d_ic:
                 temp_extrap_field.build_index()
                 missing_val=-999
             else:
-                missing_val=32
+                missing_val=32.5
 
             # Scan the coastal model files, find one close to our start date
             for fn in coastal_files:
