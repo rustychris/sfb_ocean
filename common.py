@@ -59,8 +59,12 @@ def write_tim(da,suffix,feat_suffix,mdu):
 
 def write_t3d(da,suffix,feat_suffix,edge_depth,quantity,mdu):
     """
-    Write a 3D boundary condition for a feature from ROMS data
+    Write a 3D boundary condition for a feature from a vertical profile (likely
+       ROMS or HYCOM data)
      - most of the time writing boundaries is here
+     - DFM details for rev52184:
+         the LAYERS line is silently truncated to 100 characters.
+         LAYER_TYPE=z assumes a coordinate of 0 at the bed, positive up
     """
     run_base_dir=mdu.base_path
     ref_date,t_start,t_stop = mdu.time_range()
@@ -81,17 +85,37 @@ def write_t3d(da,suffix,feat_suffix,edge_depth,quantity,mdu):
     # ROMS values count from the surface, positive down.
     # but DFM wants bottom-up.
     # limit to valid depths, and reverse the order at the same time
-    roms_depth_slice=slice(valid_depth_idxs[-1],None,-1)
+
+    da_sub=da.isel(depth=valid_depth_idxs[::-1])
+
+    max_line_length=100 # limitation in DFM on the whole LAYERS line
+    # 7 is '_2.4567'
+    # -1 for minor bit of safety
+    max_layers=(max_line_length-len("LAYERS=")) // 7 - 1
 
     # This should be the right numbers, but reverse order
-    sigma = (-edge_depth - da.depth.values[roms_depth_slice]) / -edge_depth
+    sigma = (-edge_depth - da_sub.depth.values) / -edge_depth
 
     # Force it to span the full water column
     sigma[0]=min(0.0,sigma[0])
     sigma[-1]=max(1.0,sigma[-1])
 
-    sigma_str=" ".join(["%.4f"%s for s in sigma])
-    elapsed_minutes=(da.time.values - ref_date)/np.timedelta64(60,'s')
+    if len(sigma)>max_layers:
+        remapper=lambda y: np.interp(np.linspace(0,1,max_layers),
+                                     np.linspace(0,1,len(sigma)),y)
+        # Just because the use of remapper below is not compatible
+        # with vector quantities at this time.
+        assert da_sub.ndim-1 == 1
+    else:
+        remapper=lambda y: y
+
+    sigma_str=" ".join(["%.4f"%s for s in remapper(sigma)])
+
+    # This line is truncated at 100 characters in DFM r52184.
+    layer_line="LAYERS=%s"%sigma_str
+    assert len(layer_line)<max_line_length
+
+    elapsed_minutes=(da_sub.time.values - ref_date)/np.timedelta64(60,'s')
 
     ref_date_str=utils.to_datetime(ref_date).strftime('%Y-%m-%d %H:%M:%S')
     
@@ -101,24 +125,23 @@ def write_t3d(da,suffix,feat_suffix,edge_depth,quantity,mdu):
     t3d_fns=[os.path.join(run_base_dir,node_name+".t3d")
              for node_idx,node_name in enumerate(node_names) ]
 
-    assert da.dims[0]=='time' # for speed up of direct indexing
-    
+    assert da_sub.dims[0]=='time' # for speed up of direct indexing
+
     # Write the first, then copy it to the second node
     with open(t3d_fns[0],'wt') as fp:
         fp.write("\n".join([
             "LAYER_TYPE=sigma",
-            "LAYERS=%s"%sigma_str,
-            "VECTORMAX=%d"%(da.ndim-1), # default, but be explicit
+            layer_line,
+            "VECTORMAX=%d"%(da_sub.ndim-1), # default, but be explicit
             "quant=%s"%quantity,
             "quantity1=%s"%quantity, # why is this here?
             "# start of data",
             ""]))
         for ti,t in enumerate(elapsed_minutes):
             fp.write("TIME=%g minutes since %s\n"%(t,ref_date_str))
-            #data=" ".join( ["%.3f"%v for v in da.isel(time=ti).values[roms_depth_slice]] )
             # Faster direct indexing:
             # The ravel will interleave components - unclear if that's correct.
-            data=" ".join( ["%.3f"%v for v in da.values[ti,roms_depth_slice].ravel() ] )
+            data=" ".join( ["%.3f"%v for v in remapper(da_sub.values[ti,:].ravel()) ] )
             fp.write(data)
             fp.write("\n")
             
