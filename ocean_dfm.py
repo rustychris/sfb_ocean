@@ -35,12 +35,12 @@ import sfb_dfm_utils
 
 ##
 # 52184 is possibly better for velocity BCs
-dfm_bin_dir="/opt/software/delft/dfm/r52184-opt/bin"
+dfm_bin_dir="/home/rusty/src/dfm/r53925-opt/bin"
 
 utm2ll=proj_utils.mapper('EPSG:26910','WGS84')
 ll2utm=proj_utils.mapper('WGS84','EPSG:26910')
 
-## 
+##
 mdu=dio.MDUFile('template.mdu')
 
 # short_test_01: straight up waterlevel, 100% from OTPS
@@ -158,8 +158,8 @@ if layers=='z':
         mdu['output','FullGridOutput']    = 1
 elif layers=='sigma':
     mdu['geometry','Layertype']=1 # sigma
-    if kmx==20: # 
-        mdu['geometry','StretchType']=1 # user defined 
+    if kmx==20: #
+        mdu['geometry','StretchType']=1 # user defined
         # These must sum exactly to 100.
         mdu['geometry','StretchCoef']="8 8 7 7 6 6 6 6 5 5 5 5 5 5 5 5 2 2 1 1"
     else:
@@ -167,10 +167,10 @@ elif layers=='sigma':
         mdu['geometry','StretchType']=0 # uniform
 else:
     raise Exception("bad layer choice '%s'"%layers)
-    
+
 
 old_bc_fn = os.path.join(run_base_dir,mdu['external forcing','ExtForceFile'])
-## 
+##
 
 from sfb_dfm_utils import ca_roms, coamps, hycom
 
@@ -198,12 +198,12 @@ if grid=='rectangle_coast': # rectangular subset
         g.write_ugrid(ugrid_file)
     else:
         g=unstructured_grid.UnstructuredGrid.from_ugrid(ugrid_file)
-    coastal_bc_coords=None 
+    coastal_bc_coords=None
     # should get some coordinates if I return to this grid
     raise Exception("Probably ought to fill in coastal_bc_coords for this grid")
 elif grid=='ragged_coast': # ragged edge
     ugrid_file='derived/matched_grid_v01.nc'
-    
+
     if not os.path.exists(ugrid_file):
         poly=wkb2shp.shp2geom('grid-poly-v00.shp')[0]['geom']
         g=ca_roms.extract_roms_subgrid_poly(poly)
@@ -229,7 +229,7 @@ else:
 
 if flat_bottom is not None:
     g.nodes['depth'][:]=flat_bottom
-## 
+##
 
 # Identify ocean boundary edges
 # Limit the boundary edges to edges which have a real cell on the other
@@ -249,12 +249,12 @@ if coastal_files is not None:
         candidates=np.array(candidates)
     else:
         candidates=None # !? danger will robinson.
-        
+
     ca_roms.annotate_grid_from_data(g,coastal_files,candidate_edges=candidates)
 
     boundary_edges=np.nonzero( g.edges['src_idx_out'][:,0] >= 0 )[0]
 
-## 
+##
 
 # To get lat/lon info, and later used for the initial condition
 src=xr.open_dataset(coastal_files[0])
