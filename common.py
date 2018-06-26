@@ -20,11 +20,11 @@ def write_pli(g,run_base_dir,src_name,j,suffix):
 def write_tim(da,suffix,feat_suffix,mdu):
     """
     da: xr.DataArray with timeseries data
-    suffix: suffix to add the 
+    suffix: suffix to add the
     """
     # Write the data:
     run_base_dir=mdu.base_path
-    
+
     ref_date,t_start,t_stop = mdu.time_range()
 
     columns=['elapsed_minutes']

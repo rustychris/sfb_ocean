@@ -355,7 +355,6 @@ for ji,j in enumerate(boundary_edges):
             print("Normalizing by depth = %.2f"%( dfm_zeta_offset - depth))
             veloc_u=flux_factor*otps_U.result.isel(site=ji) / (dfm_zeta_offset-depth)
             veloc_v=flux_factor*otps_V.result.isel(site=ji) / (dfm_zeta_offset-depth)
-            
         else:
             veloc_u=otps_u.result.isel(site=ji)
             veloc_v=otps_v.result.isel(site=ji)
@@ -645,7 +644,7 @@ if use_wind:
 dfm_output_count=0
 def dflowfm(mdu_fn,args=['--autostartstop']):
     global dfm_output_count
-    
+
     cmd=[os.path.join(dfm_bin_dir,"dflowfm")] + args
     if mdu_fn is not None:
         cmd.append(os.path.basename(mdu_fn))
@@ -681,14 +680,11 @@ def partition_grid(clear_old=True):
             gridN_fn=grid_fn.replace('_net.nc','_%04d_net.nc')
             if os.path.exists(gridN_fn):
                 os.unlink(gridN_fn)
-    
     dflowfm(None,["--partition:ndomains=%d"%nprocs,mdu['geometry','NetFile']])
-    
-        
+
 def partition_mdu(mdu_fn):
     if nprocs<=1:
         return
-    
     # similar, but for the mdu:
     cmd="%s/generate_parallel_mdu.sh %s %d 6"%(dfm_bin_dir,os.path.basename(mdu_fn),nprocs)
     pwd=os.getcwd()
@@ -723,10 +719,10 @@ if set_3d_ic:
         # or at least perceived pain.
         for fn in map_fns:
             os.path.exists(fn) and os.unlink(fn)
-            
+
     if not os.path.exists(map_fn):
         # Very short run just to get a map file
-        # 
+        #
         temp_mdu=copy.deepcopy(mdu)
         temp_mdu.set_time_range(start=run_start,
                                 stop=run_start+np.timedelta64(60,'s'),
