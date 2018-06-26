@@ -4,3 +4,5 @@ matched_grid*.shp
 matched_grid*.prj
 matched_grid*.shx
 matched_grid*.dbf
+DATA
+*.tar.Z
