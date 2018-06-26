@@ -301,7 +301,7 @@ else:
 
 coastal_boundary_data=ca_roms.extract_data_at_boundary(coastal_files,g,boundary_edges)
 
-## 
+##
 
 os.path.exists(old_bc_fn) and os.unlink(old_bc_fn)
 
@@ -315,7 +315,6 @@ zeta_ic = dfm_zeta_offset + np.interp(utils.to_dnum(run_start),
                                       utils.to_dnum(otps_water_level.time),
                                       otps_water_level.result.mean(dim='site'))
 mdu['geometry','WaterLevIni'] = zeta_ic
-
 
 if layers=='z':
     # positive-up values, from the bed to the surface
@@ -366,8 +365,8 @@ for ji,j in enumerate(boundary_edges):
         veloc_normal=(g.edges['bc_norm_in'][j,0]*veloc_u + g.edges['bc_norm_in'][j,1]*veloc_v)
 
         total_flux = total_flux + veloc_normal * depth * edge_lengths[j]
-        
-    if 1: # Coastal model:        
+
+    if 1: # Coastal model:
         coastal_dt=np.median( np.diff(coastal_boundary_data.time.values) )
         coastal_dt_h= coastal_dt / np.timedelta64(3600,'s')
 
@@ -390,7 +389,7 @@ for ji,j in enumerate(boundary_edges):
                                       utils.to_dnum(coastal_water_level.time),
                                       coastal_water_level.values )
             water_level.values += coastal_interp
-            
+
         if 1: # salinity, temperature
             if 1: # proper spatial variation:
                 salinity_3d=coastal_boundary_data.isel(boundary=ji).salt

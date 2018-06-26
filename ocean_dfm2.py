@@ -9,6 +9,8 @@ six.moves.reload_module(interpXYZ)
 six.moves.reload_module(read_otps)
 six.moves.reload_module(dfm)
 
+read_otps.OTPS_DATA='derived'
+
 class SFOceanModel(dfm.DFlowModel):
     dfm_bin_dir="/home/rusty/src/dfm/r53925-opt/bin"
     num_procs=1
@@ -17,9 +19,12 @@ class SFOceanModel(dfm.DFlowModel):
 
     def bc_factory(self,params):
         if params['name']=='Ocean':
-            # apply the same boundary to all of those edges:
+            # spatially constant water level
             # return dfm.OTPSStageBC(self,otps_model='wc',**params)
-            return dfm.MultiBC(self,dfm.OTPSStageBC,otps_model='wc',**params)
+            # spatially varying water level:
+            # return dfm.MultiBC(self,dfm.OTPSStageBC,otps_model='wc',**params)
+            # spatially varying transport
+            return dfm.MultiBC(self,dfm.OTPSVelocityBC,otps_model='wc',**params)
         else:
             raise Exception("Unrecognized %s"%str(params))
 
@@ -48,6 +53,7 @@ model.run_start=np.datetime64('2017-07-01')
 model.run_stop =np.datetime64('2017-08-01')
 
 import ragged_grid as grid_mod
+six.moves.reload_module(grid_mod)
 
 model.config_z_layers()
 model.set_grid(grid_mod.grid)
@@ -58,3 +64,11 @@ model.partition()
 model.run_model()
 
 # Return to HYCOM config -- get otis tides and 3D going first.
+##
+
+from stompy.grid import unstructured_grid
+six.moves.reload_module(unstructured_grid)
+
+g=unstructured_grid.UnstructuredGrid.from_ugrid("ragged/grid_v01.nc")
+g.edges_normals(0,force_inward=True)
+
