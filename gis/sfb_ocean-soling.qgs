@@ -321,6 +321,15 @@
       <SelectionColorGreenPart type="int">255</SelectionColorGreenPart>
       <CanvasColorBluePart type="int">255</CanvasColorBluePart>
     </Gui>
+    <script_assistant>
+      <no_reload type="QString">N</no_reload>
+      <current_configuration type="QString">Script Assistant</current_configuration>
+      <test_folder type="QString">/home/rusty/.qgis2/python/plugins/scriptassistant/tests</test_folder>
+      <test_data_folder type="QString"></test_data_folder>
+      <view_tests type="QString">N</view_tests>
+      <script_folder type="QString"></script_folder>
+      <current_test type="QString">$ALL</current_test>
+    </script_assistant>
     <Digitizing>
       <DefaultSnapToleranceUnit type="int">2</DefaultSnapToleranceUnit>
       <SnappingMode type="QString">current_layer</SnappingMode>

@@ -1,12 +1,14 @@
+# Revisiting 2018-06-28
+
 # Check the BC fluxes, namely to get a sense of whether velocities
 # are being included as expected.
-# 
+#
 # Run `short_22` has exactly one boundary with forcing, `ji=10`, which
 # is on the northern side of the grid, N-S exchange, on a ragged corner,
 # not far from the NW corner of the grid.
-# 
+#
 # The unorm values match with the expected forcing on this edge.
-# 
+#
 # The next question is whether the observed lack of match before was from
 # having multiple velocities defined on a single cell, or some other cause.
 
@@ -41,8 +43,7 @@ from stompy.grid import unstructured_grid
 
 import sfb_dfm_utils
 
-
-## 
+##
 
 utm2ll=proj_utils.mapper('EPSG:26910','WGS84')
 ll2utm=proj_utils.mapper('WGS84','EPSG:26910')
@@ -328,7 +329,7 @@ e2c=g.edge_to_cells(recalc=True)
 
 bc_elems=np.unique(FlowLink_to[is_bc])
 
-## 
+##
 
 # 1. Find all cells which have BC exchanges, based on map_ds
 
