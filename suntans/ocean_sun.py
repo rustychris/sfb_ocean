@@ -30,13 +30,15 @@ read_otps.OTPS_DATA='../derived'
 
 use_temp=False
 use_salt=True
+ocean_method='flux'
 
 # sun001: 25 layers, 1.05 stretch, stairstep
 # sun002: 1.08 stretch, no stairstep, no mpi
 # sun003: zero salt/temp, and then static HYCOM
-run_dir='runs/sun003'
+# sun004: longer.
+run_dir='runs/sun004'
 run_start=np.datetime64("2017-06-01")
-run_stop =np.datetime64("2017-06-03")
+run_stop =np.datetime64("2017-06-04")
 
 model=drv.SuntansModel()
 model.projection="EPSG:26910"
@@ -49,7 +51,7 @@ model.config['Nkmax']=25
 # would like to relax this ASAP
 model.config['stairstep']=0
 
-dt_secs=60 
+dt_secs=60
 model.config['dt']=dt_secs
 # quarter-hour map output:
 model.config['ntout']=int(15*60/dt_secs)
@@ -80,7 +82,11 @@ model.set_grid(unstructured_grid.UnstructuredGrid.from_ugrid(dest_grid))
 model.add_gazetteer("linear_features.shp")
 
 # spatially varying
-ocean_bc=drv.MultiBC(drv.OTPSStageBC,name='Ocean',otps_model='wc')
+if ocean_method=='eta':
+    ocean_bc=drv.MultiBC(drv.OTPSStageBC,name='Ocean',otps_model='wc')
+elif ocean_method=='flux':
+    ocean_bc=drv.MultiBC(drv.OTPSFlowBC,name='Ocean',otps_model='wc')
+
 model.add_bcs(ocean_bc)
 
 model.write()
@@ -90,7 +96,6 @@ model.write()
 utils.path("../")
 from sfb_dfm_utils import ca_roms, coamps, hycom
 hycom_lon_range=[-124.7, -121.7 ]
-# hycom_lon_range=[-124.7+360, -121.7+360]
 hycom_lat_range=[36.2, 38.85]
 coastal_pad=0 # np.timedelta64(10,'D') # lots of padding to avoid ringing from butterworth
 coastal_time_range=[run_start-coastal_pad,run_stop+coastal_pad]
@@ -138,15 +143,40 @@ model.write_ic_ds()
 
 #----
 
-# Copy IC values to the boundary conditions for testing
-for ci,c in enumerate(utils.progress(model.bc_ds.cellp.values)):
-    ic_salt = model.ic_ds.salt.values[0,:,c]
-    for ti in range(model.bc_ds.dims['Nt']):
-        model.bc_ds.S.isel(Ntype3=ci,Nt=ti).values[:]=ic_salt
+model.copy_ic_to_bc(model,'salt','S')
 model.write_bc_ds()
 
-##---
+#---
 model.partition()
 
 model.run_simulation()
+
+
+# This actually appears to run.
+# it has no freesurface forcing, a little scary.
+# And it runs!  quite nicely.
+##
+
+# HYCOM fetching
+test_time_range=[np.datetime64("2017-05-20"),
+                 np.datetime64("2017-05-31")]
+coastal_files=hycom.fetch_range(hycom_lon_range,hycom_lat_range,test_time_range)
+
+ds=xr.open_dataset(coastal_files[0]) # has no lon or time
+print(ds.time)
+
+##
+t=np.datetime64("2017-05-20")
+ds=hycom.hycom_opendap_for_time(t)
+
+##
+
+lon_range=np.array([-124.7, -121.7])
+lon_values=np.linspace(-180,179.92,4500)
+
+lon0=lon_values[0]
+
+lon_slice_a=slice(*np.searchsorted((lon_values-lon0)%360.0,(lon_range-lon0)%360.0))
+print(lon_slice_a)
+
 
