@@ -401,7 +401,7 @@ model.write_bc_ds()
 #---
 model.partition()
 
-model.run_simulation()
+#model.run_simulation()
 
 # This actually appears to run.
 # it has no freesurface forcing, a little scary.
