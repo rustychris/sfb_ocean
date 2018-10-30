@@ -205,10 +205,10 @@ class HycomMultiVelocityBC(drv.MultiBC):
             # getting tricky here - do more work here rather than trying to push ad hoc interface
             # into the model class
             # velocity components in UTM x/y coordinate system
-            sub_ds['u']=('time','layer'), np.nan*np.ones((sub_ds.dims['time'],layers.dims['Nk']),
-                                                         np.float64)
-            sub_ds['v']=('time','layer'), np.nan*np.ones((sub_ds.dims['time'],layers.dims['Nk']),
-                                                         np.float64)
+            sub_ds['u']=('time','layer'), np.zeros((sub_ds.dims['time'],layers.dims['Nk']),
+                                                   np.float64)
+            sub_ds['v']=('time','layer'), np.zeros((sub_ds.dims['time'],layers.dims['Nk']),
+                                                   np.float64)
             # depth-integrated transport on suntans layers, in m2/s
             sub_ds['Uint']=('time',), np.nan*np.ones(sub_ds.dims['time'],np.float64)
             sub_ds['Vint']=('time',), np.nan*np.ones(sub_ds.dims['time'],np.float64)
@@ -309,6 +309,8 @@ class HycomMultiVelocityBC(drv.MultiBC):
             sub_bc._dataset['v'].values[:,:] -= vel_error[:,None]*sub_bc.inward_normal[1]
 
 # spatially varying
+hycom_ll_box=[-124.7, -121.7, 36.2, 38.85]
+
 if ocean_method=='eta':
     ocean_bc=drv.MultiBC(drv.OTPSStageBC,name='Ocean',otps_model='wc')
 elif ocean_method=='flux':
@@ -318,7 +320,7 @@ elif ocean_method=='velocity':
 elif ocean_method=='hycom':
     # explicity give bounds to make sure we always download the same
     # subset.
-    ocean_bc=HycomMultiVelocityBC(ll_box=[-124.7, -121.7, 36.2, 38.85],
+    ocean_bc=HycomMultiVelocityBC(ll_box=hycom_ll_box,
                                   name='Ocean')
 
     # leftover -- clean out once new code is working
@@ -327,39 +329,22 @@ elif ocean_method=='hycom':
     #coastal_files=hycom.fetch_range(hycom_lon_range,hycom_lat_range,coastal_time_range)
 
 model.add_bcs(ocean_bc)
-#ocean_bc.enumerate_sub_bcs()
-#sub_bcs=ocean_bc.sub_bcs
-
 
 ## 
 model.write()
 
 ##--
 
-# How do those flows line up?
-
-all_Q=0
-for bc in utils.progress(model.bcs[0].sub_bcs):
-    all_Q=all_Q + bc.dataset()['Q'].values
-
-t=bc.dataset()['time']
-
-#--
-total_area=model.grid.cells_area().sum()
-
-# these are on the order of 1e-5, shakes out to 7m/day.
-# removing the repeated days makes it a bit better, though
-# it still loses 1.5m over 200 steps
-# output is every 15 steps, which is 15 minutes.
-# 5 day run.
-# should be 480 steps of output. not sure why I only see about 295
-# steps in the time series plots.
-# but at at the
-d_eta_dt = all_Q / total_area
-
-#--
-#
+# Initial condition:
 # map each cell to a hycom
+fns=hycom.fetch_range(hycom_ll_box[:2],hycom_ll_box[2:],
+                               [model.run_start,model.run_start+np.timedelta64(1,'D')],
+                               cache_dir=cache_dir)
+hycom_ic_fn=fns[0]
+
+hycom_ds=xr.open_dataset(hycom_ic_fn)
+if 'time' in hycom_ds.dims:
+    hycom_ds=hycom_ds.isel(time=0)
 cc=model.grid.cells_center()
 cc_ll=model.native_to_ll(cc)
 
@@ -404,7 +389,6 @@ model.write_bc_ds()
 model.partition()
 
 model.run_simulation()
-
 
 # This actually appears to run.
 # it has no freesurface forcing, a little scary.
