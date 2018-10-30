@@ -17,7 +17,10 @@ from stompy import utils, filters
 import logging as log
 
 utils.path("../")
-from sfb_dfm_utils import hycom
+#from sfb_dfm_utils import hycom
+from stompy.io.local import hycom
+cache_dir='cache'
+
 from stompy.grid import unstructured_grid
 
 from stompy.model.otps import read_otps
@@ -42,9 +45,9 @@ ocean_method='hycom'
 # sun004: longer. tidal fluxes, then tidal velocity
 # sun005: hycom flows
 # sun006: hycom flows, 1 month run
-run_dir='runs/sun006'
+run_dir='runs/sun007'
 run_start=np.datetime64("2017-06-15")
-run_stop =np.datetime64("2017-07-15")
+run_stop =np.datetime64("2017-09-10")
 
 model=drv.SuntansModel()
 model.projection="EPSG:26910"
@@ -66,7 +69,7 @@ model.config['ntoutStore']=int(86400/dt_secs)
 model.config['mergeArrays']=0
 model.config['rstretch']=1.08
 
-# these are scaled down by 1e-3 for debugging
+# these were scaled down by 1e-3 for debugging
 if use_temp:
     model.config['gamma']=0.00021
 else:
@@ -90,107 +93,220 @@ model.add_gazetteer("linear_features.shp")
 #--
 
 # HYCOM
-#   get the data files
-# don't choose these dynamically because hycom data are cached based
-# on the region and we want to re-use the cache as much as possible.
-hycom_lon_range=[-124.7, -121.7 ]
-hycom_lat_range=[36.2, 38.85]
-coastal_pad=np.timedelta64(10,'D') # lots of padding to avoid ringing from butterworth
-coastal_time_range=[run_start-coastal_pad,run_stop+coastal_pad]
-coastal_files=hycom.fetch_range(hycom_lon_range,hycom_lat_range,coastal_time_range)
-
-# For starters, set IC and BC to a static hycom field.
-hycom_ds=xr.open_dataset(coastal_files[0])
-
-
-class HycomVelocityBC(drv.VelocityBC):
+class HycomMultiVelocityBC(drv.MultiBC):
     """
-    A velocityBC which takes its data from HYCOM output
+    Special handling of multiple hycom boundary segments to
+    enforce specific net flux requirements.
+    Otherwise small errors, including quantization and discretization,
+    lead to a net flux.
     """
+    # according to website, hycom runs for download are non-tidal, so
+    # don't worry about filtering
     # Data is only daily, so go a bit longer than a usual tidal filter
-    lp_hours=3*24.0
-    hycom_files=None # caller to pass a list of filenames
+    lp_hours=0
+    pad=np.timedelta64(4,'D')
 
-    def dataset(self):
-        model=self.model
-        # Extract time series from the datasets
-        xy=np.array(self.geom.coords)
-        L=utils.dist(xy[0],xy[-1])
-        xy_mid=xy.mean(axis=0)
-        ll=model.native_to_ll(xy_mid)
+    def __init__(self,ll_box=None,**kw):
+        self.ll_box=ll_box
+        self.data_files=None
+        super(HycomMultiVelocityBC,self).__init__(self.VelocityProfileBC,**kw)
 
-        ds=xr.open_dataset(self.hycom_files[0])
+    class VelocityProfileBC(drv.VelocityBC):
+        _dataset=None # supplied by factory
+        def dataset(self):
+            return self._dataset
 
-        hyc_depth=ds.depth.values # top to bottom, positive:down
+    # def factory(self,model,**sub_kw):
+    #     """
+    #     kludgey -- originally cls was a class attribute, but for hycom
+    #     multibc we have a stronger tie between the individual BCs,
+    #     so this is changed to a method on the MultiBC instance.
+    #     """
+    #     print("got the call to cls")
+    #     # sub_kw should include geom, name, grid_edge, grid_cell
+    #     raise Exception('Here is where to pull out a water column')
 
-        lat_i=utils.nearest(ds.lat.values,ll[1])
-        lon_values=ds.lon.values
-        lon_i=utils.nearest((lon_values-lon_values[0])%360., (ll[0]-lon_values[0])%360. )
+    def enumerate_sub_bcs(self):
+        if self.ll_box is None:
+            # grid=self.model.grid ...
+            raise Exception("Not implemented: auto-calculating ll_box")
+        self.populate_files()
+        super(HycomMultiVelocityBC,self).enumerate_sub_bcs()
+    
+        # may decide that right after the stock enumerate_sub_bcs is the right
+        # place to adjust fluxes...
+        self.populate_velocity()
 
-        dst=xr.Dataset()
+    def populate_files(self):
+        data_start=self.model.run_start-self.pad
+        data_stop =self.model.run_stop+self.pad
+        self.data_files=hycom.fetch_range(self.ll_box[:2],self.ll_box[2:],
+                                          [data_start,data_stop],
+                                          cache_dir=cache_dir)
 
-        # Scan to get times first
-        times=[]
-        for fn in self.hycom_files:
-            # grab time from the filename -- timestamp in the file does not appear
-            # to be reliable.
-            t=utils.to_dt64(datetime.datetime.strptime(os.path.basename(fn).split('-')[0],
-                                                       '%Y%m%d%H'))
-            times.append(t)
-        times=np.array(times)
-        dst['time']=('time',),times
+    def init_bathy(self):
+        """
+        populate self.bathy, an XYZField in native coordinates, with
+        values as hycom's positive down bathymetry.
+        """
+        # TODO: download hycom bathy on demand.
+        self.hy_bathy=xr.open_dataset( os.path.join(cache_dir,'depth_GLBa0.08_09.nc') )
+        lon_min,lon_max,lat_min,lat_max=self.ll_box
 
-        # make this positive:down to match hycom and make the interpolation
-        layers=model.layer_data()
-        sun_z=-layers.z_mid.values
+        sel=((hy_bathy.Latitude.values>=lat_min) &
+             (hy_bathy.Latitude.values<=lat_max) &
+             (hy_bathy.Longitude.values>=lon_min) &
+             (hy_bathy.Longitude.values<=lon_max))
 
-        Nk=int(model.config['Nkmax'])
-        u=np.zeros( (len(times), Nk), np.float64)
-        v=np.zeros( (len(times), Nk), np.float64)
+        bathy_xyz=np.c_[ hy_bathy.Longitude.values[sel],
+                         hy_bathy.Latitude.values[sel],
+                         hy_bathy.bathymetry.isel(MT=0).values[sel] ]
+        bathy_xyz[:,:2]=ll2utm(bathy_xyz[:,:2])
 
-        for ti,fn in enumerate(self.hycom_files):
-            # grab time from the filename -- timestamp in the file does not appear
-            # to be reliable.
-            # actually that was a bug in the download code. should be okay now.
-            ds=xr.open_dataset(fn)
-            hyc_u=ds['water_u'].isel(lat=lat_i,lon=lon_i).values
-            hyc_v=ds['water_v'].isel(lat=lat_i,lon=lon_i).values
+        self.bathy=field.XYZField(X=bathy_xyz[:,:2],F=bathy_xyz[:,2])
 
-            valid=np.isfinite(hyc_u)
+    def populate_velocity(self):
+        """ Do the actual work of iterating over sub-edges and hycom files,
+        interpolating in the vertical, projecting as needed, and adjust the overall
+        fluxes
+        """
+        # The net inward flux in m3/s over the whole BC that we will adjust to.
+        target_Q=np.zeros(len(self.data_files)) # assumes one time step per file
 
-            if not np.any(valid):
-                ds.close()
-                log.warning("BC point (%.1f,%.1f) is dry in HYCOM grid"%(xy_mid[0],xy_mid[1]))
-                continue # will leave as 0
+        # Get spatial information about hycom files
+        hy_ds0=xr.open_dataset(self.data_files[0])
+        if 'time' in hy_ds0.water_u.dims:
+            hy_ds0=hy_ds0.isel(time=0)
+        # makes sure lon,lat are compatible with water velocity
+        _,Lon,Lat=xr.broadcast(hy_ds0.water_u.isel(depth=0),hy_ds0.lon,hy_ds0.lat)
+        hy_xy=self.model.ll_to_native(Lon.values,Lat.values)
 
-            # could add bottom values if we really cared.
-            sun_u=np.interp(sun_z, hyc_depth[valid], hyc_u[valid])
-            sun_v=np.interp(sun_z, hyc_depth[valid], hyc_v[valid])
-            u[ti,:]=sun_u
-            v[ti,:]=sun_v
-            ds.close() # avoid too many open files
+        self.init_bathy()
 
-        dt_h=np.median(np.diff(times)) / np.timedelta64(3600,'s')
-        for zi in range(len(sun_z)):
-            u[:,zi] = filters.lowpass(u[:,zi],cutoff=self.lp_hours,order=4,dt=dt_h)
-            v[:,zi] = filters.lowpass(v[:,zi],cutoff=self.lp_hours,order=4,dt=dt_h)
-        dst['u']=('time','Nk'),u
-        dst['v']=('time','Nk'),v
-        dst['depth']=('Nk',),sun_z
-        dst.depth.attrs['positive']='down'
+        # Initialize per-edge details
+        self.model.grid._edge_depth=self.model.grid.edges['edge_depth']
+        layers=self.model.layer_data(with_offset=True)
 
-        # calculate related quantities to make debugging easier
-        j=self.model.grid.select_edges_nearest( xy_mid )
-        grid_n=self.get_inward_normal(j)
-        dz=-np.diff(layers.z_interface)
-        dst['U']=('time',),(u*dz).sum(axis=1)
-        dst['V']=('time',),(v*dz).sum(axis=1)
-        dst['Q']=('time',),L*(dst.U*grid_n[0]+dst.V*grid_n[1])
-        dst['unorm']=('time','Nk'), grid_n[0]*u + grid_n[1]*v
+        for i,sub_bc in enumerate(self.sub_bcs):
+            sub_bc.inward_normal=sub_bc.get_inward_normal()
+            sub_bc.edge_length=sub_bc.geom.length
+            sub_bc.edge_center=np.array(sub_bc.geom.centroid)
 
-        return dst
+            # skip the transforms...
+            hyc_dists=utils.dist( sub_bc.edge_center, hy_xy )
+            row,col=np.nonzero( hyc_dists==hyc_dists.min() )
+            row=row[0] ; col=col[0]
+            sub_bc.hy_row_col=(row,col) # tuple, so it can be used directly in []
 
-##
+            # initialize the datasets
+            sub_bc._dataset=sub_ds=xr.Dataset()
+            # assumes that from each file we use only one timestep
+            sub_ds['time']=('time',), np.ones(len(self.data_files),'M8[m]')
+            # getting tricky here - do more work here rather than trying to push ad hoc interface
+            # into the model class
+            # velocity components in UTM x/y coordinate system
+            sub_ds['u']=('time','layer'), np.nan*np.ones((sub_ds.dims['time'],layers.dims['Nk']),
+                                                         np.float64)
+            sub_ds['v']=('time','layer'), np.nan*np.ones((sub_ds.dims['time'],layers.dims['Nk']),
+                                                         np.float64)
+            # depth-integrated transport on suntans layers, in m2/s
+            sub_ds['Uint']=('time',), np.nan*np.ones(sub_ds.dims['time'],np.float64)
+            sub_ds['Vint']=('time',), np.nan*np.ones(sub_ds.dims['time'],np.float64)
+            # project transport to edge normal * edge_length to get m3/s
+            sub_ds['Q_in']=('time',), np.nan*np.ones(sub_ds.dims['time'],np.float64)
+
+            sub_bc.edge_depth=edge_depth=self.model.grid.edge_depths()[sub_bc.grid_edge] # positive up
+
+            # First, establish the geometry on the suntans side, in terms of z_interface values
+            # for all wet layers.  below-bed layers have zero vertical span.  positive up, but
+            # shift back to real, non-offset, vertical coordinate
+            sun_z_interface=(-self.model.z_offset)+layers.z_interface.values.clip(edge_depth,np.inf)
+            sub_bc.sun_z_interfaces=sun_z_interface
+            # And the pointwise data from hycom:
+            hy_layers=hy_ds0.depth.values.copy()
+            sub_bc.hy_valid=valid=np.isfinite(hy_ds0.water_u.isel(lat=row,lon=col).values)
+            hycom_depths=hy_ds0.depth.values[valid]
+            # possible that hy_bed_depth is not quite correct, and hycom has data
+            # even deeper.  in that case just pad out the depth a bit so there
+            # is at least a place to put the bed velocity.
+            if len(hycom_depths)!=0:
+                sub_bc.hy_bed_depth=max(hycom_depths[-1]+1.0,bathy(hy_xy[sub_bc.hy_row_col]))
+                sub_bc.hycom_depths=np.concatenate( [hycom_depths, [sub_bc.hy_bed_depth]])
+            else:
+                # edge is dry in HYCOM -- be careful to check and skip below.
+                sub_bc.hycom_depths=hycom_depths
+                sub_bc._dataset['u'].values[:]=0.0
+                sub_bc._dataset['v'].values[:]=0.0
+                sub_bc._dataset['Uint'].values[:]=0.0
+                sub_bc._dataset['Vint'].values[:]=0.0
+
+        # Populate the velocity data, outer loop is over hycom files, since
+        # that's most expensive
+        for ti,fn in enumerate(self.data_files):
+            hy_ds=xr.open_dataset(fn)
+            if 'time' in hy_ds.dims:
+                # again, assuming that we only care about the first time step in each file
+                hy_ds=hy_ds.isel(time=0)
+            print(hy_ds.time.values)
+
+            water_u=hy_ds.water_u.values
+            water_v=hy_ds.water_v.values
+            water_u_bottom=hy_ds.water_u_bottom.values
+            water_v_bottom=hy_ds.water_v_bottom.values
+
+            for i,sub_bc in enumerate(self.sub_bcs):
+                hy_depths=sub_bc.hycom_depths
+                sub_bc._dataset.time.values[ti]=hy_ds.time.values
+                if len(hy_depths)==0:
+                    continue # already zero'd out above.
+                row,col=sub_bc.hy_row_col
+                z_sel=sub_bc.hy_valid
+
+                sun_dz=np.diff(-sub_bc.sun_z_interfaces)
+                sun_valid=sun_dz>0
+                for water_vel,water_vel_bottom,sun_var,trans_var in [ (water_u,water_u_bottom,'u','Uint'),
+                                                                      (water_v,water_v_bottom,'v','Vint') ]:
+                    sub_water_vel=np.concatenate([ water_vel[z_sel,row,col],
+                                                   water_vel_bottom[None,row,col] ])
+
+                    # integrate -- there isn't a super clean way to do this that I see.
+                    # but averaging each interval is probably good enough, just loses some vertical
+                    # accuracy.
+                    interval_mean_vel=0.5*(sub_water_vel[:-1]+sub_water_vel[1:])
+                    veldz=np.concatenate( ([0],np.cumsum(np.diff(hy_depths)*interval_mean_vel)) )
+                    sun_veldz=np.interp(-sub_bc.sun_z_interfaces, hy_depths, veldz)
+                    sun_d_veldz=np.diff(sun_veldz)
+
+                    sub_bc._dataset[sun_var].values[ti,sun_valid]=sun_d_veldz[sun_valid]/sun_dz[sun_valid]
+                    # might as well calculate flux while we are here
+                    # explicit flux:
+                    # sub_bc._dataset[trans_var].values[ti]=(sub_bc._dataset[sun_var]*sun_dz).sum()
+                    # but we've already done the integration
+                    sub_bc._dataset[trans_var].values[ti]=sun_veldz[-1]
+            hy_ds.close() # free up netcdf resources
+
+        # project transport onto edges to get fluxes
+        total_Q=0.0
+        total_flux_A=0.0
+        for i,sub_bc in enumerate(self.sub_bcs):
+            Q_in=sub_bc.edge_length*(sub_bc.inward_normal[0]*sub_bc._dataset['Uint'].values +
+                                     sub_bc.inward_normal[1]*sub_bc._dataset['Vint'].values)
+            sub_bc._dataset['Q_in'].values[:]=Q_in
+            total_Q=total_Q+Q_in
+            # edge_depth here reflects the expected water column depth.  it is the bed elevation, with
+            # the z_offset removed (I hope), under the assumption that a typical eta is close to 0.0,
+            # but may be offset as much as -10.
+            total_flux_A+=sub_bc.edge_length*sub_bc.edge_depth
+
+        Q_error=total_Q-target_Q
+        vel_error=Q_error/total_flux_A
+        print("Velocity error: %.6f -- %.6f m/s"%(vel_error.min(),vel_error.max()))
+
+        # And apply the adjustment:
+        # note that Q_in, Uint, Vint are no longer valid
+        for i,sub_bc in enumerate(self.sub_bcs):
+            sub_bc._dataset['u'].values[:,:] -= vel_error[:,None]*sub_bc.inward_normal[0]
+            sub_bc._dataset['v'].values[:,:] -= vel_error[:,None]*sub_bc.inward_normal[1]
 
 # spatially varying
 if ocean_method=='eta':
@@ -200,13 +316,25 @@ elif ocean_method=='flux':
 elif ocean_method=='velocity':
     ocean_bc=drv.MultiBC(drv.OTPSVelocityBC,name='Ocean',otps_model='wc')
 elif ocean_method=='hycom':
-    ocean_bc=drv.MultiBC(HycomVelocityBC,name='Ocean',hycom_files=coastal_files)
+    # explicity give bounds to make sure we always download the same
+    # subset.
+    ocean_bc=HycomMultiVelocityBC(ll_box=[-124.7, -121.7, 36.2, 38.85],
+                                  name='Ocean')
+
+    # leftover -- clean out once new code is working
+    #coastal_pad=np.timedelta64(10,'D') # lots of padding to avoid ringing from butterworth
+    #coastal_time_range=[run_start-coastal_pad,run_stop+coastal_pad]
+    #coastal_files=hycom.fetch_range(hycom_lon_range,hycom_lat_range,coastal_time_range)
 
 model.add_bcs(ocean_bc)
+#ocean_bc.enumerate_sub_bcs()
+#sub_bcs=ocean_bc.sub_bcs
 
+
+## 
 model.write()
 
-#--
+##--
 
 # How do those flows line up?
 
