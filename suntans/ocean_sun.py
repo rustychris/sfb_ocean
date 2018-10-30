@@ -45,7 +45,9 @@ ocean_method='hycom'
 # sun004: longer. tidal fluxes, then tidal velocity
 # sun005: hycom flows
 # sun006: hycom flows, 1 month run
-run_dir='runs/sun007'
+# sun007: testing 3D adjusted hycom fluxes -- had doubled volume loss
+# sun008: diagnosing how 007 went off the rails.
+run_dir='runs/sun008'
 run_start=np.datetime64("2017-06-15")
 run_stop =np.datetime64("2017-09-10")
 
@@ -115,16 +117,23 @@ class HycomMultiVelocityBC(drv.MultiBC):
         _dataset=None # supplied by factory
         def dataset(self):
             return self._dataset
-
-    # def factory(self,model,**sub_kw):
-    #     """
-    #     kludgey -- originally cls was a class attribute, but for hycom
-    #     multibc we have a stronger tie between the individual BCs,
-    #     so this is changed to a method on the MultiBC instance.
-    #     """
-    #     print("got the call to cls")
-    #     # sub_kw should include geom, name, grid_edge, grid_cell
-    #     raise Exception('Here is where to pull out a water column')
+        def update_Q_in(self):
+            """calculate time series flux~m3/s from self._dataset,
+            updating Q_in field therein.
+            Assumes populate_velocity has already been run, so 
+            additional attributes are available.
+            """
+            ds=self.dataset()
+            sun_dz=np.diff(-self.sun_z_interfaces)
+            # u ~ [time,layer]
+            Uint=(ds['u'].values[:,:]*sun_dz[None,:]).sum(axis=1)
+            Vint=(ds['v'].values[:,:]*sun_dz[None,:]).sum(axis=1)
+                                
+            Q_in=self.edge_length*(self.inward_normal[0]*Uint +
+                                   self.inward_normal[1]*Vint)
+            ds['Q_in'].values[:]=Q_in
+            ds['Uint'].values[:]=Uint
+            ds['Vint'].values[:]=Vint
 
     def enumerate_sub_bcs(self):
         if self.ll_box is None:
@@ -150,7 +159,7 @@ class HycomMultiVelocityBC(drv.MultiBC):
         values as hycom's positive down bathymetry.
         """
         # TODO: download hycom bathy on demand.
-        self.hy_bathy=xr.open_dataset( os.path.join(cache_dir,'depth_GLBa0.08_09.nc') )
+        hy_bathy=self.hy_bathy=xr.open_dataset( os.path.join(cache_dir,'depth_GLBa0.08_09.nc') )
         lon_min,lon_max,lat_min,lat_max=self.ll_box
 
         sel=((hy_bathy.Latitude.values>=lat_min) &
@@ -161,7 +170,7 @@ class HycomMultiVelocityBC(drv.MultiBC):
         bathy_xyz=np.c_[ hy_bathy.Longitude.values[sel],
                          hy_bathy.Latitude.values[sel],
                          hy_bathy.bathymetry.isel(MT=0).values[sel] ]
-        bathy_xyz[:,:2]=ll2utm(bathy_xyz[:,:2])
+        bathy_xyz[:,:2]=self.model.ll_to_native(bathy_xyz[:,:2])
 
         self.bathy=field.XYZField(X=bathy_xyz[:,:2],F=bathy_xyz[:,2])
 
@@ -230,7 +239,7 @@ class HycomMultiVelocityBC(drv.MultiBC):
             # even deeper.  in that case just pad out the depth a bit so there
             # is at least a place to put the bed velocity.
             if len(hycom_depths)!=0:
-                sub_bc.hy_bed_depth=max(hycom_depths[-1]+1.0,bathy(hy_xy[sub_bc.hy_row_col]))
+                sub_bc.hy_bed_depth=max(hycom_depths[-1]+1.0,self.bathy(hy_xy[sub_bc.hy_row_col]))
                 sub_bc.hycom_depths=np.concatenate( [hycom_depths, [sub_bc.hy_bed_depth]])
             else:
                 # edge is dry in HYCOM -- be careful to check and skip below.
@@ -296,17 +305,26 @@ class HycomMultiVelocityBC(drv.MultiBC):
             # edge_depth here reflects the expected water column depth.  it is the bed elevation, with
             # the z_offset removed (I hope), under the assumption that a typical eta is close to 0.0,
             # but may be offset as much as -10.
-            total_flux_A+=sub_bc.edge_length*sub_bc.edge_depth
+            # edge_depth is positive up.  here assume typical eta=0
+            total_flux_A+=sub_bc.edge_length*(-sub_bc.edge_depth).clip(0,np.inf)
 
         Q_error=total_Q-target_Q
         vel_error=Q_error/total_flux_A
         print("Velocity error: %.6f -- %.6f m/s"%(vel_error.min(),vel_error.max()))
+        print("total_flux_A: %.3e"%total_flux_A)
 
-        # And apply the adjustment:
-        # note that Q_in, Uint, Vint are no longer valid
+        # And apply the adjustment, and update integrated quantities
+        adj_total_Q=0.0
         for i,sub_bc in enumerate(self.sub_bcs):
+            # seems like we should be subtracting vel_error, but that results in a doubling
+            # of the error?
             sub_bc._dataset['u'].values[:,:] -= vel_error[:,None]*sub_bc.inward_normal[0]
             sub_bc._dataset['v'].values[:,:] -= vel_error[:,None]*sub_bc.inward_normal[1]
+            sub_bc.update_Q_in()
+            adj_total_Q=adj_total_Q+sub_bc._dataset['Q_in']
+        adj_Q_error=adj_total_Q-target_Q
+        adj_vel_error=adj_Q_error/total_flux_A
+        print("Post-adjustment velocity error: %.6f -- %.6f m/s"%(adj_vel_error.min(),adj_vel_error.max()))
 
 # spatially varying
 hycom_ll_box=[-124.7, -121.7, 36.2, 38.85]
@@ -322,11 +340,6 @@ elif ocean_method=='hycom':
     # subset.
     ocean_bc=HycomMultiVelocityBC(ll_box=hycom_ll_box,
                                   name='Ocean')
-
-    # leftover -- clean out once new code is working
-    #coastal_pad=np.timedelta64(10,'D') # lots of padding to avoid ringing from butterworth
-    #coastal_time_range=[run_start-coastal_pad,run_stop+coastal_pad]
-    #coastal_files=hycom.fetch_range(hycom_lon_range,hycom_lat_range,coastal_time_range)
 
 model.add_bcs(ocean_bc)
 
