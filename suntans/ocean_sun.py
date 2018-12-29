@@ -45,9 +45,10 @@ ocean_method='hycom'
 # sun007: testing 3D adjusted hycom fluxes -- had doubled volume loss
 # sun008: diagnosing how 007 went off the rails.
 # sun009: working toward real salt/temp coupling with hycom
-run_dir='/opt/sfb_ocean/suntans/runs/sun010'
+# sun011: combining OTPS and HYCOM
+run_dir='/opt/sfb_ocean/suntans/runs/sun012'
 run_start=np.datetime64("2017-06-15")
-run_stop =np.datetime64("2017-09-10")
+run_stop =np.datetime64("2017-06-25")
 
 model=drv.SuntansModel()
 model.projection="EPSG:26910"
@@ -55,8 +56,8 @@ model.num_procs=1
 model.sun_bin_dir="/home/rusty/src/suntans/main"
 model.load_template("sun-template.dat")
 
-model.set_run_dir(run_dir,mode='pristine')
-model.config['Nkmax']=25
+model.set_run_dir(run_dir,mode='askclobber')
+model.config['Nkmax']=35
 # would like to relax this ASAP
 model.config['stairstep']=0
 
@@ -67,7 +68,7 @@ model.config['ntout']=int(15*60/dt_secs)
 # daily restart file
 model.config['ntoutStore']=int(86400/dt_secs)
 model.config['mergeArrays']=0
-model.config['rstretch']=1.08
+model.config['rstretch']=1.1
 
 # these were scaled down by 1e-3 for debugging
 if use_temp:
@@ -110,6 +111,7 @@ elif ocean_method=='hycom':
     # subset.
     ocean_bc=drv.HycomMultiVelocityBC(ll_box=hycom_ll_box,
                                       name='Ocean',cache_dir=cache_dir)
+    model.add_bcs(drv.MultiBC(drv.OTPSVelocityBC,name='Ocean',otps_model='wc',mode='add'))
 
 model.add_bcs(ocean_bc)
 
@@ -139,35 +141,36 @@ lon_i = utils.nearest(hycom_ds.lon.values,cc_ll[:,0],max_dx=1.2*dlon)
 sun_z = -model.ic_ds.z_r.values
 
 default_s=33.4 # would be nice to pull a nominal shallow value from HYCOM
+default_T=10.0
+
 assert ('time', 'Nk', 'Nc') == model.ic_ds.salt.dims,"Workaround is fragile"
 
-for c in range(model.grid.Ncells()):
-    sun_s=default_s
-    if lat_i[c]<0 or lon_i[c]<0:
-        print("Cell %d does not overlap HYCOM grid"%c)
-    else:
-        # top to bottom, depth positive:down
-        s_profile=hycom_ds.salinity.isel(lon=lon_i[c],lat=lat_i[c])
-        s_profile=s_profile.values
-        valid=np.isfinite(s_profile)
-        if not np.any(valid):
-            print("Cell %d is dry in HYCOM grid"%c)
+for scal,enabled,hy_var,sun_var,default in [
+        ('s',use_salt,'salinity','salt',default_s),
+        ('T',use_temp,'water_temp','temp',default_T)
+]:
+    if not enabled:
+        continue
+    
+    for c in range(model.grid.Ncells()):
+        sun_val=default
+
+        if lat_i[c]<0 or lon_i[c]<0:
+            print("Cell %d does not overlap HYCOM grid"%c)
         else:
-            # could add bottom salinity if we really cared.
-            sun_s=np.interp( sun_z,
-                             hycom_ds.depth.values[valid], s_profile[valid] )
-            # if Nk wasn't broken:
-            #model.ic_ds.salt.isel(time=0,Nc=c).values[:]=sun_s
-    model.ic_ds.salt.values[0,:,c]=sun_s
+            # top to bottom, depth positive:down
+            val_profile=hycom_ds[hy_var].isel(lon=lon_i[c],lat=lat_i[c]).values
+            valid=np.isfinite(val_profile)
+            if not np.any(valid):
+                print("Cell %d is dry in HYCOM grid"%c)
+            else:
+                # could add bottom salinity if we really cared.
+                sun_val=np.interp( sun_z,
+                                   hycom_ds.depth.values[valid], val_profile[valid] )
+        model.ic_ds[sun_var].values[0,:,c]=sun_val
 
 model.write_ic_ds()
 
-#----
-
-# model.copy_ic_to_bc('salt','S')
-# model.write_bc_ds()
-
-#---
 model.partition()
 
 model.run_simulation()
