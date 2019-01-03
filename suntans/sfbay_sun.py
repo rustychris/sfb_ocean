@@ -56,7 +56,11 @@ model.config['ntout']=int(15*60/dt_secs) # quarter-hour map output
 model.config['ntoutStore']=int(86400/dt_secs) # # daily restart file
 model.config['mergeArrays']=0
 model.config['rstretch']=1.1
-model.config['Cmax']=10.0 # volumetric is a better test, this is more a backup.
+model.config['Cmax']=30.0 # volumetric is a better test, this is more a backup.
+# esp. with edge depths, seems better to use z0B so that very shallow
+# edges can have the right drag.
+model.confog['CdB']=0
+model.config['z0B']=0.001 
 
 if use_temp:
     model.config['gamma']=0.00021
