@@ -34,7 +34,8 @@ use_temp=True
 use_salt=True
 
 # bay003: add perimeter freshwater sources
-run_dir='/opt/sfb_ocean/suntans/runs/bay003'
+# bay004: debugging missing san_jose
+run_dir='/opt/sfb_ocean/suntans/runs/bay004'
 
 model=drv.SuntansModel()
 model.run_start=np.datetime64("2017-06-15")
@@ -60,7 +61,9 @@ model.config['Cmax']=30.0 # volumetric is a better test, this is more a backup.
 # esp. with edge depths, seems better to use z0B so that very shallow
 # edges can have the right drag.
 model.config['CdB']=0
-model.config['z0B']=0.001 
+model.config['z0B']=0.001
+model.z_offset=-5
+model.dredge_depth=-2
 
 if use_temp:
     model.config['gamma']=0.00021
@@ -128,7 +131,7 @@ sj_temp_bc =drv.ScalarBC(name='SJRiver',scalar='temperature',value=20.0)
 model.add_bcs([sac_bc,sj_bc,sac_salt_bc,sj_salt_bc,sac_temp_bc,sj_temp_bc])
 
 #
-if 0: # disable if no internet
+if 1: # disable if no internet
     # USGS gauged creeks
     for station,name in [ (11172175, "COYOTE"),
                           (11169025, "SCLARAVCc"), # Alviso Sl / Guad river
@@ -165,8 +168,10 @@ for potw_name in ['sunnyvale','san_jose','palo_alto',
     # use the geometry to decide whether this is a flow BC or a point source
     hits=model.match_gazetteer(name=potw_name)
     if hits[0]['geom'].type=='LineString':
+        print("%s: flow bc"%potw_name)
         Q_bc=drv.FlowBC(name=potw_name,Q=Q_da,filters=[dfm.Lag(-offset)])
     else:
+        print("%s: source bc"%potw_name)
         Q_bc=drv.SourceSinkBC(name=potw_name,Q=Q_da,filters=[dfm.Lag(-offset)])
         
     salt_bc=drv.ScalarBC(parent=Q_bc,scalar='salinity',value=0.0)
@@ -174,8 +179,6 @@ for potw_name in ['sunnyvale','san_jose','palo_alto',
     model.add_bcs([Q_bc,salt_bc,temp_bc])
     
 model.write()
-
-# temperature is not getting set in point sources.
 
 ## 
 # while developing, initialize everywhere to 34ppt, so we can see rivers
@@ -187,3 +190,10 @@ model.write_ic_ds()
 model.partition()
 
 # model.run_simulation()
+
+##
+import matplotlib.pyplot as plt
+plt.figure(1).clf()
+ecoll=model.grid.plot_edges(values=model.grid.edges['edge_depth'],clip=zoom,cmap='jet')
+plt.axis('equal')
+plt.colorbar(ecoll)
