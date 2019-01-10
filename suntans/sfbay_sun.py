@@ -38,7 +38,7 @@ run_dir='/opt/sfb_ocean/suntans/runs/bay003'
 
 model=drv.SuntansModel()
 model.run_start=np.datetime64("2017-06-15")
-model.run_stop=np.datetime64("2017-06-25")
+model.run_stop=np.datetime64("2017-06-18")
 
 model.projection="EPSG:26910"
 model.num_procs=4
@@ -59,7 +59,7 @@ model.config['rstretch']=1.1
 model.config['Cmax']=30.0 # volumetric is a better test, this is more a backup.
 # esp. with edge depths, seems better to use z0B so that very shallow
 # edges can have the right drag.
-model.confog['CdB']=0
+model.config['CdB']=0
 model.config['z0B']=0.001 
 
 if use_temp:
@@ -102,6 +102,7 @@ g.add_edge_field('edge_depth',de,on_exists='overwrite')
 model.set_grid(g)
 
 model.add_gazetteer("grid-sfbay/linear_features.shp")
+model.add_gazetteer("grid-sfbay/point_features.shp")
 
 ocean_salt_bc=drv.ScalarBC(name='ocean',scalar='salinity',value=34)
 ocean_temp_bc=drv.ScalarBC(name='ocean',scalar='temperature',value=10)
@@ -109,7 +110,7 @@ ocean_bc=drv.NOAAStageBC(name='ocean',station=9415020,cache_dir=cache_dir,
                          filters=[dfm.Lowpass(cutoff_hours=1.5)])
 model.add_bcs([ocean_bc,ocean_salt_bc,ocean_temp_bc]) 
 
-##
+#
 
 # Delta inflow
 # SacRiver, SJRiver
@@ -126,8 +127,8 @@ sj_temp_bc =drv.ScalarBC(name='SJRiver',scalar='temperature',value=20.0)
 
 model.add_bcs([sac_bc,sj_bc,sac_salt_bc,sj_salt_bc,sac_temp_bc,sj_temp_bc])
 
-##
-if 0: # disabled on plane w/o internet
+#
+if 0: # disable if no internet
     # USGS gauged creeks
     for station,name in [ (11172175, "COYOTE"),
                           (11169025, "SCLARAVCc"), # Alviso Sl / Guad river
@@ -138,8 +139,9 @@ if 0: # disabled on plane w/o internet
         temp_bc=drv.ScalarBC(name=name,scalar='temperature',value=20.0)
 
         model.add_bcs([Q_bc,salt_bc,temp_bc])
-
-##
+else:
+    print("Disabling USGS gauged inputs")
+#
 
 # WWTP discharging into sloughs
 potw_dir="../sfbay_potw"
@@ -149,7 +151,8 @@ potw_ds=xr.open_dataset( os.path.join(potw_dir,"outputs","sfbay_delta_potw.nc"))
 # omits some of the smaller sources, and this does not include any
 # benthic discharges
 for potw_name in ['sunnyvale','san_jose','palo_alto',
-                  'lg','sonoma_valley','petaluma','cccsd','fs','ddsd']:
+                  'lg','sonoma_valley','petaluma','cccsd','fs','ddsd',
+                  'ebda','ebmud','sf_southeast']:
     Q_da=potw_ds.flow.sel(site=potw_name)
     # Have to seek back in time to find a year that has data for the
     # whole run
@@ -158,30 +161,29 @@ for potw_name in ['sunnyvale','san_jose','palo_alto',
         offset+=np.timedelta64(365,'D')
     if offset:
         print("Offset for POTW %s is %s"%(potw_name,offset))
+
+    # use the geometry to decide whether this is a flow BC or a point source
+    hits=model.match_gazetteer(name=potw_name)
+    if hits[0]['geom'].type=='LineString':
+        Q_bc=drv.FlowBC(name=potw_name,Q=Q_da,filters=[dfm.Lag(-offset)])
+    else:
+        Q_bc=drv.SourceSinkBC(name=potw_name,Q=Q_da,filters=[dfm.Lag(-offset)])
         
-    Q_bc=drv.FlowBC(name=potw_name,Q=Q_da,filters=[dfm.Lag(-offset)])
-    salt_bc=drv.ScalarBC(name=potw_name,scalar='salinity',value=0.0)
-    temp_bc=drv.ScalarBC(name=potw_name,scalar='temperature',value=20.0)
+    salt_bc=drv.ScalarBC(parent=Q_bc,scalar='salinity',value=0.0)
+    temp_bc=drv.ScalarBC(parent=Q_bc,scalar='temperature',value=20.0)
     model.add_bcs([Q_bc,salt_bc,temp_bc])
     
-##
-
 model.write()
 
-##--
+# temperature is not getting set in point sources.
 
+## 
 # while developing, initialize everywhere to 34ppt, so we can see rivers
 # coming in
 model.ic_ds.salt.values[:]=34
 model.ic_ds.temp.values[:]=10
 model.write_ic_ds()
 
-## 
-
 model.partition()
 
-model.run_simulation()
-
-
-##
-
+# model.run_simulation()
