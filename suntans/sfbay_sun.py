@@ -4,6 +4,7 @@ ocean domain.
 """
 from stompy.model.suntans import sun_driver
 
+import shutil
 import six
 import sys
 import os
@@ -27,6 +28,7 @@ from stompy.grid import unstructured_grid
 from stompy.model.otps import read_otps
 import stompy.model.delft.dflow_model as dfm
 import stompy.model.suntans.sun_driver as drv
+
 ##
 
 # rough command line interface
@@ -49,6 +51,8 @@ use_temp=True
 use_salt=True
 
 # bay003: add perimeter freshwater sources
+# bay004: debugging missing san_jose
+# bay005: Nkmax=30, stairstep=1
 run_dir=args.dir # '/opt/sfb_ocean/suntans/runs/bay003'
 
 model=drv.SuntansModel()
@@ -62,8 +66,8 @@ model.use_edge_depths=True
 model.load_template("sun-template.dat")
 
 model.set_run_dir(run_dir,mode='askclobber')
-model.config['Nkmax']=1
-model.config['stairstep']=0
+model.config['Nkmax']=30
+model.config['stairstep']=1
 
 dt_secs=5.0
 model.config['dt']=dt_secs
@@ -75,7 +79,9 @@ model.config['Cmax']=30.0 # volumetric is a better test, this is more a backup.
 # esp. with edge depths, seems better to use z0B so that very shallow
 # edges can have the right drag.
 model.config['CdB']=0
-model.config['z0B']=0.001 
+model.config['z0B']=0.001
+model.z_offset=-5
+model.dredge_depth=-2
 
 if use_temp:
     model.config['gamma']=0.00021
@@ -87,14 +93,39 @@ if use_salt:
 else:
     model.config['beta']=0.0
 
-dest_grid="grid-sfbay/sfei_v20_net.nc"
-assert os.path.exists(dest_grid),"Grid %s not found"%dest_grid
+src_grid="grid-sfbay/sfei_v22_net.nc"
+dest_grid=src_grid.replace("_net.nc","-bathy.nc")
+assert os.path.exists(src_grid),"Grid %s not found"%src_grid
+assert dest_grid != src_grid
 
-g=unstructured_grid.UnstructuredGrid.read_dfm(dest_grid)
+if utils.is_stale(dest_grid,[src_grid]):
+    g_src=unstructured_grid.UnstructuredGrid.read_dfm(src_grid)
+    import bathy
+    dem=bathy.dem()
+    # Add some deep bias by choosing min depth of nodes
+    node_depths=dem(g_src.nodes['x'])
+    cell_depths=dem(g_src.cells_center())
+    for c in range(g_src.Ncells()):
+        nodes=g_src.cell_to_nodes(c)
+        cell_depths[c]=min(cell_depths[c],node_depths[nodes].min())
 
-# for now, just cell depth from the node depths already in there
-g.add_cell_field('depth',g.interp_node_to_cell(g.nodes['depth']))
-g.delete_node_field('depth')
+    while 1: # fill a few nans..
+        bad=np.nonzero(np.isnan(cell_depths))[0]
+        if len(bad)==0:
+            break
+        print("Fill %d nans"%len(bad))
+        for i in bad:
+            nbrs=g_src.cell_to_cells(i)
+            cell_depths[i]=np.nanmean(cell_depths[nbrs])
+            
+    assert np.all(np.isfinite(cell_depths)),"Whoa hoss - got some nan depth"
+    g_src.add_cell_field('depth',cell_depths,on_exists='overwrite')
+    if 'depth' in g_src.nodes.dtype.names:
+        g_src.delete_node_field('depth')
+    g_src.write_ugrid(dest_grid,overwrite=True)
+
+g=unstructured_grid.UnstructuredGrid.from_ugrid(dest_grid)
+
 if 1: # edges take shallower cell
     de=np.zeros(g.Nedges(),np.float64)
     e2c=g.edge_to_cells()
@@ -143,7 +174,7 @@ sj_temp_bc =drv.ScalarBC(name='SJRiver',scalar='temperature',value=20.0)
 model.add_bcs([sac_bc,sj_bc,sac_salt_bc,sj_salt_bc,sac_temp_bc,sj_temp_bc])
 
 #
-if 0: # disable if no internet
+if 1: # disable if no internet
     # USGS gauged creeks
     for station,name in [ (11172175, "COYOTE"),
                           (11169025, "SCLARAVCc"), # Alviso Sl / Guad river
@@ -180,17 +211,22 @@ for potw_name in ['sunnyvale','san_jose','palo_alto',
     # use the geometry to decide whether this is a flow BC or a point source
     hits=model.match_gazetteer(name=potw_name)
     if hits[0]['geom'].type=='LineString':
+        print("%s: flow bc"%potw_name)
         Q_bc=drv.FlowBC(name=potw_name,Q=Q_da,filters=[dfm.Lag(-offset)])
     else:
+        print("%s: source bc"%potw_name)
         Q_bc=drv.SourceSinkBC(name=potw_name,Q=Q_da,filters=[dfm.Lag(-offset)])
         
     salt_bc=drv.ScalarBC(parent=Q_bc,scalar='salinity',value=0.0)
     temp_bc=drv.ScalarBC(parent=Q_bc,scalar='temperature',value=20.0)
     model.add_bcs([Q_bc,salt_bc,temp_bc])
 
-
 if __name__=='__main__':
     model.write()
+    try:
+        shutil.copy(__file__,model.run_dir)
+    except NameError:
+        print("__file__ not defined.  cannot copy script")
 
     # temperature is not getting set in point sources.
 
@@ -203,3 +239,4 @@ if __name__=='__main__':
     model.partition()
 
     model.run_simulation()
+
