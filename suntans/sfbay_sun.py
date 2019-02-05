@@ -39,7 +39,9 @@ parser.add_argument("-s", "--start", help="Date of simulation start",
 parser.add_argument("-e", "--end", help="Date of simulation stop",
                     default="2017-06-22")
 parser.add_argument("-d", "--dir", help="Run directory",
-                    default="runs/bay004")
+                    default="runs/bay006")
+# bay006: setup on linuxmodeling
+
 
 if __name__=='__main__':
     args=parser.parse_args()
