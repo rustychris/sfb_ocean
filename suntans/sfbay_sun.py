@@ -5,6 +5,7 @@ ocean domain.
 from stompy.model.suntans import sun_driver
 
 import six
+import sys
 import os
 import datetime
 
@@ -27,18 +28,32 @@ from stompy.model.otps import read_otps
 import stompy.model.delft.dflow_model as dfm
 import stompy.model.suntans.sun_driver as drv
 ##
-six.moves.reload_module(dfm)
-six.moves.reload_module(drv)
 
+# rough command line interface
+import argparse
+parser = argparse.ArgumentParser(description='Manipulate unstructured grids.')
+parser.add_argument("-s", "--start", help="Date of simulation start",
+                    default="2017-06-15")
+parser.add_argument("-e", "--end", help="Date of simulation stop",
+                    default="2017-06-22")
+parser.add_argument("-d", "--dir", help="Run directory",
+                    default="runs/bay004")
+
+if __name__=='__main__':
+    args=parser.parse_args()
+else:
+    # For manually running the script.
+    args=parser.parser_args([])
+    
 use_temp=True
 use_salt=True
 
 # bay003: add perimeter freshwater sources
-run_dir='/opt/sfb_ocean/suntans/runs/bay003'
+run_dir=args.dir # '/opt/sfb_ocean/suntans/runs/bay003'
 
 model=drv.SuntansModel()
-model.run_start=np.datetime64("2017-06-15")
-model.run_stop=np.datetime64("2017-06-18")
+model.run_start=np.datetime64(args.start)
+model.run_stop=np.datetime64(args.end)
 
 model.projection="EPSG:26910"
 model.num_procs=4
@@ -172,18 +187,19 @@ for potw_name in ['sunnyvale','san_jose','palo_alto',
     salt_bc=drv.ScalarBC(parent=Q_bc,scalar='salinity',value=0.0)
     temp_bc=drv.ScalarBC(parent=Q_bc,scalar='temperature',value=20.0)
     model.add_bcs([Q_bc,salt_bc,temp_bc])
+
+
+if __name__=='__main__':
+    model.write()
+
+    # temperature is not getting set in point sources.
+
+    # while developing, initialize everywhere to 34ppt, so we can see rivers
+    # coming in
+    model.ic_ds.salt.values[:]=34
+    model.ic_ds.temp.values[:]=10
+    model.write_ic_ds()
     
-model.write()
+    model.partition()
 
-# temperature is not getting set in point sources.
-
-## 
-# while developing, initialize everywhere to 34ppt, so we can see rivers
-# coming in
-model.ic_ds.salt.values[:]=34
-model.ic_ds.temp.values[:]=10
-model.write_ic_ds()
-
-model.partition()
-
-# model.run_simulation()
+    model.run_simulation()
