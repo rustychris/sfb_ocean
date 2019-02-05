@@ -26,16 +26,14 @@ from stompy.grid import unstructured_grid
 from stompy.model.otps import read_otps
 import stompy.model.delft.dflow_model as dfm
 import stompy.model.suntans.sun_driver as drv
-##
-six.moves.reload_module(dfm)
-six.moves.reload_module(drv)
 
 use_temp=True
 use_salt=True
 
 # bay003: add perimeter freshwater sources
 # bay004: debugging missing san_jose
-run_dir='/opt/sfb_ocean/suntans/runs/bay004'
+# bay005: Nkmax=30, stairstep=1
+run_dir='/opt/sfb_ocean/suntans/runs/bay005'
 
 model=drv.SuntansModel()
 model.run_start=np.datetime64("2017-06-15")
@@ -48,8 +46,8 @@ model.use_edge_depths=True
 model.load_template("sun-template.dat")
 
 model.set_run_dir(run_dir,mode='askclobber')
-model.config['Nkmax']=1
-model.config['stairstep']=0
+model.config['Nkmax']=30
+model.config['stairstep']=1
 
 dt_secs=5.0
 model.config['dt']=dt_secs
@@ -75,14 +73,39 @@ if use_salt:
 else:
     model.config['beta']=0.0
 
-dest_grid="grid-sfbay/sfei_v20_net.nc"
-assert os.path.exists(dest_grid),"Grid %s not found"%dest_grid
+src_grid="grid-sfbay/sfei_v22_net.nc"
+dest_grid=src_grid.replace("_net.nc","-bathy.nc")
+assert os.path.exists(src_grid),"Grid %s not found"%src_grid
+assert dest_grid != src_grid
 
-g=unstructured_grid.UnstructuredGrid.read_dfm(dest_grid)
+if utils.is_stale(dest_grid,[src_grid]):
+    g_src=unstructured_grid.UnstructuredGrid.read_dfm(src_grid)
+    import bathy
+    dem=bathy.dem()
+    # Add some deep bias by choosing min depth of nodes
+    node_depths=dem(g_src.nodes['x'])
+    cell_depths=dem(g_src.cells_center())
+    for c in range(g_src.Ncells()):
+        nodes=g_src.cell_to_nodes(c)
+        cell_depths[c]=min(cell_depths[c],node_depths[nodes].min())
 
-# for now, just cell depth from the node depths already in there
-g.add_cell_field('depth',g.interp_node_to_cell(g.nodes['depth']))
-g.delete_node_field('depth')
+    while 1: # fill a few nans..
+        bad=np.nonzero(np.isnan(cell_depths))[0]
+        if len(bad)==0:
+            break
+        print("Fill %d nans"%len(bad))
+        for i in bad:
+            nbrs=g_src.cell_to_cells(i)
+            cell_depths[i]=np.nanmean(cell_depths[nbrs])
+            
+    assert np.all(np.isfinite(cell_depths)),"Whoa hoss - got some nan depth"
+    g_src.add_cell_field('depth',cell_depths,on_exists='overwrite')
+    if 'depth' in g_src.nodes.dtype.names:
+        g_src.delete_node_field('depth')
+    g_src.write_ugrid(dest_grid,overwrite=True)
+
+g=unstructured_grid.UnstructuredGrid.from_ugrid(dest_grid)
+
 if 1: # edges take shallower cell
     de=np.zeros(g.Nedges(),np.float64)
     e2c=g.edge_to_cells()
@@ -189,11 +212,5 @@ model.write_ic_ds()
 
 model.partition()
 
-# model.run_simulation()
+model.run_simulation()
 
-##
-import matplotlib.pyplot as plt
-plt.figure(1).clf()
-ecoll=model.grid.plot_edges(values=model.grid.edges['edge_depth'],clip=zoom,cmap='jet')
-plt.axis('equal')
-plt.colorbar(ecoll)
