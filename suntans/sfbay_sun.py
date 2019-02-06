@@ -44,7 +44,7 @@ parser.add_argument("-s", "--start", help="Date of simulation start",
 parser.add_argument("-e", "--end", help="Date of simulation stop",
                     default="2017-06-22")
 parser.add_argument("-d", "--dir", help="Run directory",
-                    default="runs/bay006")
+                    default="runs/bay007")
 # bay006: setup on linuxmodeling
 
 
@@ -52,7 +52,7 @@ if __name__=='__main__':
     args=parser.parse_args()
 else:
     # For manually running the script.
-    args=parser.parser_args([])
+    args=parser.parse_args([])
     
 use_temp=True
 use_salt=True
@@ -67,7 +67,7 @@ model.run_start=np.datetime64(args.start)
 model.run_stop=np.datetime64(args.end)
 
 model.projection="EPSG:26910"
-model.num_procs=16
+model.num_procs=4
 model.sun_bin_dir="/home/rusty/src/suntans/main"
 model.use_edge_depths=True
 model.load_template("sun-template.dat")
@@ -87,6 +87,7 @@ model.config['Cmax']=30.0 # volumetric is a better test, this is more a backup.
 # edges can have the right drag.
 model.config['CdB']=0
 model.config['z0B']=0.001
+
 model.z_offset=-5
 model.dredge_depth=-2
 
@@ -157,6 +158,22 @@ model.set_grid(g)
 model.add_gazetteer("grid-sfbay/linear_features.shp")
 model.add_gazetteer("grid-sfbay/point_features.shp")
 
+##
+
+# Setup profile output -- should move into sun_driver.py once working
+model.config['ProfileVariables']='husT'
+model.config['ntoutProfs']=int(900/dt_secs) # 15 minute data
+model.config['numInterpPoints']=1
+model.config['DataLocations']='profile_locs.dat'
+
+mon_points=model.match_gazetteer(type='monitor')
+xys=[ np.array(feat['geom']) for feat in mon_points]
+
+valid_xys=[xy for xy in xys if model.grid.select_cells_nearest(xy,inside=True) is not None]
+np.savetxt( os.path.join(model.run_dir,model.config['DataLocations']),
+            np.array(valid_xys) )
+
+## 
 ocean_salt_bc=drv.ScalarBC(name='ocean',scalar='salinity',value=34)
 ocean_temp_bc=drv.ScalarBC(name='ocean',scalar='temperature',value=10)
 ocean_bc=drv.NOAAStageBC(name='ocean',station=9415020,cache_dir=cache_dir,
@@ -245,8 +262,12 @@ if __name__=='__main__':
 
     # while developing, initialize everywhere to 34ppt, so we can see rivers
     # coming in
-    model.ic_ds.salt.values[:]=34
-    model.ic_ds.temp.values[:]=10
+    if 0:
+        model.ic_ds.salt.values[:]=34
+        model.ic_ds.temp.values[:]=10
+    # for real runs, initialize with Polaris cruise
+    
+    
     model.write_ic_ds()
     
     model.partition()
