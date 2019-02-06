@@ -21,7 +21,12 @@ from stompy import utils, filters
 import logging as log
 
 from stompy.io.local import hycom
-cache_dir='cache'
+try:
+    here=os.path.dirname(__file__)
+except NameError:
+    here="."
+cache_dir=os.path.join(here,'cache')
+os.path.exists(cache_dir) or os.makedirs(cache_dir)
 
 from stompy.grid import unstructured_grid
 
@@ -62,7 +67,7 @@ model.run_start=np.datetime64(args.start)
 model.run_stop=np.datetime64(args.end)
 
 model.projection="EPSG:26910"
-model.num_procs=4
+model.num_procs=16
 model.sun_bin_dir="/home/rusty/src/suntans/main"
 model.use_edge_depths=True
 model.load_template("sun-template.dat")
@@ -201,7 +206,13 @@ potw_ds=xr.open_dataset( os.path.join(potw_dir,"outputs","sfbay_delta_potw.nc"))
 for potw_name in ['sunnyvale','san_jose','palo_alto',
                   'lg','sonoma_valley','petaluma','cccsd','fs','ddsd',
                   'ebda','ebmud','sf_southeast']:
-    Q_da=potw_ds.flow.sel(site=potw_name)
+    # This has variously worked and not worked with strings vs bytes.
+    # Brute force and try both.
+    try:
+        Q_da=potw_ds.flow.sel(site=potw_name)
+    except KeyError:
+        Q_da=potw_ds.flow.sel(site=potw_name.encode())
+        
     # Have to seek back in time to find a year that has data for the
     # whole run
     offset=np.timedelta64(0,'D')
