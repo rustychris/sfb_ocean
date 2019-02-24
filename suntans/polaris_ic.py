@@ -1,7 +1,6 @@
 from stompy.spatial import interp_4d
 from stompy.plot import plot_utils
 from stompy import utils
-import sfbay_sun
 import os
 import numpy as np
 import pandas as pd
@@ -97,7 +96,7 @@ def set_ic_from_usgs_sfbay(model,
     depth_Nk=np.cumsum(model.ic_ds.dz.values) # positive down
     ic_values=scal_surf_2d[None,:] + scal_grad_2d[None,:]*depth_Nk[:,None]
     if clip is not None:
-        ic_values=ic_values.clip(clip)
+        ic_values=ic_values.clip(*clip)
     model.ic_ds[scalar].isel(time=0).transpose('Nk','Nc').values[...]=ic_values
 
 
@@ -107,8 +106,9 @@ if __name__=='__main__':
     cache_dir="cache"
     os.path.exists(cache_dir) or os.makedirs(cache_dir)
 
-    import six
-    six.moves.reload_module(sfbay_sun)
+    import sfbay_sun
+    #import six
+    #six.moves.reload_module(sfbay_sun)
 
     model=sfbay_sun.model
 
