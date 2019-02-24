@@ -151,14 +151,38 @@ if 1: # add levee elevations
     # levees only raise edges
     de=np.maximum(de,levee_de)
 
+if 1: # override some levee elevations
+    # This is very ugly.  Would be better to add gate/structure entries
+    # to the gazetteer, and for suntans provide the option to represent
+    # gates as closed edges
+    override_fn="grid-sfbay/edge-depth-override.shp"
+    overrides=wkb2shp.shp2geom(override_fn)
+    # Do this once for min_depth, once for max_depth
+    new_depths={}
+    for field in ['min_depth','max_depth']:
+        plis=[]
+        for feat_i,feat in enumerate(overrides):
+            if np.isfinite(feat[field]):
+                xy=np.array(feat['geom'].coords)
+                z=feat[field]*np.ones(xy.shape[0])
+                xyz=np.c_[xy,z]
+                pli_feat=[str(feat_i),xyz] # good enough??
+                plis.append(pli_feat)
+        new_de=dio.pli_to_grid_edges(g,plis)
+        new_depths[field]=np.where(np.isnan(new_de),
+                                   de, new_de)
+        print("%s: %d pli features, new depths: %s"%
+              (field,len(plis),new_de[np.isfinite(new_de)]))
+
+    de=np.maximum(de,new_depths['min_depth'])
+    de=np.minimum(de,new_depths['max_depth'])
+    
 g.add_edge_field('edge_depth',de,on_exists='overwrite')
 
 model.set_grid(g)
 
 model.add_gazetteer("grid-sfbay/linear_features.shp")
 model.add_gazetteer("grid-sfbay/point_features.shp")
-
-##
 
 # Setup profile output -- should move into sun_driver.py once working
 model.config['ProfileVariables']='husT'
