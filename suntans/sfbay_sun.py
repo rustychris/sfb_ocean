@@ -1,12 +1,8 @@
 """
 Port SF Bay DFM to suntans, for testing ahead of merging with
 ocean domain.
-
-HERE: need to copy profile_locs.dat over as part of partition() when
-restarting.
-And the first run failed 70% of the way through, crashed.
-
 """
+
 from stompy.model.suntans import sun_driver
 
 import shutil
@@ -43,7 +39,7 @@ import stompy.model.suntans.sun_driver as drv
 
 # rough command line interface
 import argparse
-parser = argparse.ArgumentParser(description='Manipulate unstructured grids.')
+parser = argparse.ArgumentParser(description='Set up and run SF Bay SUNTANS simulations.')
 parser.add_argument("-s", "--start", help="Date of simulation start",
                     default="2017-06-15")
 parser.add_argument("-e", "--end", help="Date of simulation stop",
@@ -56,11 +52,11 @@ parser.add_argument("-g","--write-grid", help="Write grid to ugrid")
 
 # bay006: setup on linuxmodeling
 
-if __name__=='__main__':
+if 0: # __name__=='__main__':
     args=parser.parse_args()
 else:
     # For manually running the script.
-    args=parser.parse_args([])
+    args=parser.parse_args(["-g","grid-connectivity.nc"])
 
 use_temp=True
 use_salt=True
@@ -121,13 +117,13 @@ if args.resume is None:
     assert os.path.exists(src_grid),"Grid %s not found"%src_grid
     assert dest_grid != src_grid
 
-    if utils.is_stale(dest_grid,[src_grid]):
+    if utils.is_stale(dest_grid,[src_grid,"bathy.py"]):
         g_src=unstructured_grid.UnstructuredGrid.read_dfm(src_grid)
         import bathy
         dem=bathy.dem()
         # Add some deep bias by choosing min depth of nodes
         node_depths=dem(g_src.nodes['x'])
-        cell_depths=dem(g_src.cells_center())
+        cell_depths=dem(g_src.cells_centroid())
         for c in range(g_src.Ncells()):
             nodes=g_src.cell_to_nodes(c)
             cell_depths[c]=min(cell_depths[c],node_depths[nodes].min())
@@ -145,25 +141,40 @@ if args.resume is None:
         g_src.add_cell_field('depth',cell_depths,on_exists='overwrite')
         if 'depth' in g_src.nodes.dtype.names:
             g_src.delete_node_field('depth')
-        g_src.write_ugrid(dest_grid,overwrite=True)
 
-    g=unstructured_grid.UnstructuredGrid.from_ugrid(dest_grid)
-    if 1: # edges take shallower cell
-        de=np.zeros(g.Nedges(),np.float64)
-        e2c=g.edge_to_cells()
+        # Also set edge depths
+        #  First step: edges take shallower of neighboring cells.
+        de=np.zeros(g_src.Nedges(),np.float64)
+        e2c=g_src.edge_to_cells()
         c1=e2c[:,0].copy() ; c2=e2c[:,1].copy()
         c1[c1<0]=c2[c1<0]
         c2[c2<0]=c1[c2<0]
-        de=np.maximum(g.cells['depth'][c1],g.cells['depth'][c2])
-    if 1: # add levee elevations
-        # load levee data:
-        levee_fn='grid-sfbay/SBlevees_tdk.pli'
-        levees=dio.read_pli(levee_fn)
-        levee_de=dio.pli_to_grid_edges(g,levees)
-        missing=np.isnan(levee_de)
-        levee_de[missing]=de[missing]
-        # levees only raise edges
-        de=np.maximum(de,levee_de)
+        de=np.maximum(g_src.cells['depth'][c1],g_src.cells['depth'][c2])
+        #  Second step: emulate levees from connectivity
+        from stompy.grid import depth_connectivity
+        edge_depths=depth_connectivity.edge_connection_depth(g_src,dem,edge_mask=None,centers='centroid')
+        invalid=np.isnan(edge_depths)
+        edge_depths[invalid]=de[invalid]
+        de=np.maximum(de,edge_depths)
+
+        assert np.all(np.isfinite(de)),"Whoa hoss - got some nan depth on edges"
+        g_src.add_edge_field('edge_depth',de,on_exists='overwrite')
+
+        g_src.write_ugrid(dest_grid,overwrite=True)
+
+    g=unstructured_grid.UnstructuredGrid.from_ugrid(dest_grid)
+
+    # 2019-02-26: These levee elevations are not robust -- led to a
+    #    model that leaked a lot.
+    # if 1: # add levee elevations
+    #     # load levee data:
+    #     levee_fn='grid-sfbay/SBlevees_tdk.pli'
+    #     levees=dio.read_pli(levee_fn)
+    #     levee_de=dio.pli_to_grid_edges(g,levees)
+    #     missing=np.isnan(levee_de)
+    #     levee_de[missing]=de[missing]
+    #     # levees only raise edges
+    #     de=np.maximum(de,levee_de)
 
     if 1: # override some levee elevations
         # This is very ugly.  Would be better to add gate/structure entries
@@ -171,6 +182,7 @@ if args.resume is None:
         # gates as closed edges
         override_fn="grid-sfbay/edge-depth-override.shp"
         overrides=wkb2shp.shp2geom(override_fn)
+        de=g.edges['edge_depth'].copy()
         # Do this once for min_depth, once for max_depth
         new_depths={}
         for field in ['min_depth','max_depth']:
@@ -191,7 +203,7 @@ if args.resume is None:
         de=np.maximum(de,new_depths['min_depth'])
         de=np.minimum(de,new_depths['max_depth'])
         
-    g.add_edge_field('edge_depth',de,on_exists='overwrite')
+        g.add_edge_field('edge_depth',de,on_exists='overwrite')
 
     model.set_grid(g)
 else:
