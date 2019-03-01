@@ -69,14 +69,14 @@ run_dir=args.dir # '/opt/sfb_ocean/suntans/runs/bay003'
 if not args.resume:
     model=drv.SuntansModel()
     model.run_start=np.datetime64(args.start)
-    model.num_procs=16
+    model.num_procs=4 # 16
     model.use_edge_depths=True
     model.load_template("sun-template.dat")
     model.config['Nkmax']=30
     model.config['stairstep']=1
     dt_secs=5.0
     model.config['dt']=dt_secs
-    model.config['ntout']=int(12*3600/dt_secs) # 12-hour map output
+    model.config['ntout']=int(1*3600/dt_secs) # 1-hour map output
     model.config['ntoutStore']=int(86400/dt_secs) # # daily restart file
     model.config['mergeArrays']=0
     model.config['rstretch']=1.1
@@ -112,7 +112,7 @@ model.z_offset=-5
 model.dredge_depth=-2
 
 if args.resume is None:
-    src_grid="grid-sfbay/sfbay-grid-20190228.nc"
+    src_grid="grid-sfbay/sfbay-grid-20190301a.nc"
     dest_grid=src_grid.replace(".nc","-bathy.nc")
     assert os.path.exists(src_grid),"Grid %s not found"%src_grid
     assert dest_grid != src_grid
