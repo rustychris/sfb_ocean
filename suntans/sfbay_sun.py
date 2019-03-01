@@ -69,14 +69,14 @@ run_dir=args.dir # '/opt/sfb_ocean/suntans/runs/bay003'
 if not args.resume:
     model=drv.SuntansModel()
     model.run_start=np.datetime64(args.start)
-    model.num_procs=16
+    model.num_procs=4 # 16
     model.use_edge_depths=True
     model.load_template("sun-template.dat")
     model.config['Nkmax']=30
     model.config['stairstep']=1
     dt_secs=5.0
     model.config['dt']=dt_secs
-    model.config['ntout']=int(12*3600/dt_secs) # 12-hour map output
+    model.config['ntout']=int(1*3600/dt_secs) # 1-hour map output
     model.config['ntoutStore']=int(86400/dt_secs) # # daily restart file
     model.config['mergeArrays']=0
     model.config['rstretch']=1.1
@@ -112,13 +112,13 @@ model.z_offset=-5
 model.dredge_depth=-2
 
 if args.resume is None:
-    src_grid="grid-sfbay/sfei_v22_net.nc"
-    dest_grid=src_grid.replace("_net.nc","-bathy.nc")
+    src_grid="grid-sfbay/sfbay-grid-20190301a.nc"
+    dest_grid=src_grid.replace(".nc","-bathy.nc")
     assert os.path.exists(src_grid),"Grid %s not found"%src_grid
     assert dest_grid != src_grid
 
     if utils.is_stale(dest_grid,[src_grid,"bathy.py"]):
-        g_src=unstructured_grid.UnstructuredGrid.read_dfm(src_grid)
+        g_src=unstructured_grid.UnstructuredGrid.from_ugrid(src_grid)
         import bathy
         dem=bathy.dem()
         # Add some deep bias by choosing min depth of nodes
@@ -163,18 +163,6 @@ if args.resume is None:
         g_src.write_ugrid(dest_grid,overwrite=True)
 
     g=unstructured_grid.UnstructuredGrid.from_ugrid(dest_grid)
-
-    # 2019-02-26: These levee elevations are not robust -- led to a
-    #    model that leaked a lot.
-    # if 1: # add levee elevations
-    #     # load levee data:
-    #     levee_fn='grid-sfbay/SBlevees_tdk.pli'
-    #     levees=dio.read_pli(levee_fn)
-    #     levee_de=dio.pli_to_grid_edges(g,levees)
-    #     missing=np.isnan(levee_de)
-    #     levee_de[missing]=de[missing]
-    #     # levees only raise edges
-    #     de=np.maximum(de,levee_de)
 
     if 1: # override some levee elevations
         # This is very ugly.  Would be better to add gate/structure entries
