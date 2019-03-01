@@ -112,7 +112,7 @@ model.z_offset=-5
 model.dredge_depth=-2
 
 if args.resume is None:
-    src_grid="grid-sfbay/sfbay-grid-20190301a.nc"
+    src_grid="grid-sfbay/sfbay-grid-20190301b.nc"
     dest_grid=src_grid.replace(".nc","-bathy.nc")
     assert os.path.exists(src_grid),"Grid %s not found"%src_grid
     assert dest_grid != src_grid
