@@ -52,7 +52,7 @@ parser.add_argument("-g","--write-grid", help="Write grid to ugrid")
 
 # bay006: setup on linuxmodeling
 
-if 0: # __name__=='__main__':
+if __name__=='__main__':
     args=parser.parse_args()
 else:
     # For manually running the script.
