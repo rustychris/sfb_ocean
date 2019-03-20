@@ -1,5 +1,6 @@
 import numpy as np
 import xarray as xr
+import os
 
 import stompy.model.delft.dflow_model as dfm
 import stompy.model.suntans.sun_driver as drv
@@ -8,9 +9,11 @@ def add_delta_bcs(model,cache_dir):
     # Delta inflow
     # SacRiver, SJRiver
     sac_bc=dfm.NwisFlowBC(name='SacRiver',station=11455420,cache_dir=cache_dir,
-                          filters=[dfm.Lowpass(cutoff_hours=3)])
+                          filters=[dfm.Lowpass(cutoff_hours=3)],
+                          dredge_depth=model.dredge_depth)
     sj_bc =dfm.NwisFlowBC(name='SJRiver',station=11337190,cache_dir=cache_dir,
-                          filters=[dfm.Lowpass(cutoff_hours=3)])
+                          filters=[dfm.Lowpass(cutoff_hours=3)],
+                          dredge_depth=model.dredge_depth)
 
     sac_salt_bc=drv.ScalarBC(name='SacRiver',scalar='salinity',value=0.0)
     sj_salt_bc =drv.ScalarBC(name='SJRiver',scalar='salinity',value=0.0)
@@ -25,7 +28,8 @@ def add_usgs_stream_bcs(model,cache_dir):
                           (11169025, "SCLARAVCc"), # Alviso Sl / Guad river
                           (11180700,"UALAMEDA"), # Alameda flood control
                           (11458000,"NAPA") ]:
-        Q_bc=dfm.NwisFlowBC(name=name,station=station,cache_dir=cache_dir)
+        Q_bc=dfm.NwisFlowBC(name=name,station=station,cache_dir=cache_dir,
+                            dredge_depth=model.dredge_depth)
         salt_bc=drv.ScalarBC(name=name,scalar='salinity',value=0.0)
         temp_bc=drv.ScalarBC(name=name,scalar='temperature',value=20.0)
 
@@ -61,10 +65,12 @@ def add_potw_bcs(model,cache_dir):
         hits=model.match_gazetteer(name=potw_name)
         if hits[0]['geom'].type=='LineString':
             print("%s: flow bc"%potw_name)
-            Q_bc=drv.FlowBC(name=potw_name,Q=Q_da,filters=[dfm.Lag(-offset)])
+            Q_bc=drv.FlowBC(name=potw_name,Q=Q_da,filters=[dfm.Lag(-offset)],
+                            dredge_depth=model.dredge_depth)
         else:
             print("%s: source bc"%potw_name)
-            Q_bc=drv.SourceSinkBC(name=potw_name,Q=Q_da,filters=[dfm.Lag(-offset)])
+            Q_bc=drv.SourceSinkBC(name=potw_name,Q=Q_da,filters=[dfm.Lag(-offset)],
+                                  dredge_depth=model.dredge_depth)
 
         salt_bc=drv.ScalarBC(parent=Q_bc,scalar='salinity',value=0.0)
         temp_bc=drv.ScalarBC(parent=Q_bc,scalar='temperature',value=20.0)

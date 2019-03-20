@@ -65,7 +65,6 @@ grid_dir="grid-merged"
 # magic
 z_offset_manual=-5
 drv.SuntansModel.sun_bin_dir="/home/rusty/src/suntans/main"
-
 # merge_001: initial trial of combined grid
 
 if not args.resume:
@@ -76,6 +75,7 @@ if not args.resume:
 
     model.config['Nkmax']=35
     model.config['stairstep']=0
+    model.dredge_depth=-2 + z_offset_manual # 2m below the offset of -5m.
 
     dt_secs=5.0
     model.config['dt']=dt_secs
