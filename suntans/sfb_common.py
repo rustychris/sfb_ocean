@@ -35,7 +35,7 @@ def add_usgs_stream_bcs(model,cache_dir):
 
         model.add_bcs([Q_bc,salt_bc,temp_bc])
 
-def add_potw_bcs(model,cache_dir):
+def add_potw_bcs(model,cache_dir,temperature=20.0):
     # WWTP discharging into sloughs
     potw_dir="../sfbay_potw"
     potw_ds=xr.open_dataset( os.path.join(potw_dir,"outputs","sfbay_delta_potw.nc"))
@@ -73,6 +73,6 @@ def add_potw_bcs(model,cache_dir):
                                   dredge_depth=model.dredge_depth)
 
         salt_bc=drv.ScalarBC(parent=Q_bc,scalar='salinity',value=0.0)
-        temp_bc=drv.ScalarBC(parent=Q_bc,scalar='temperature',value=20.0)
+        temp_bc=drv.ScalarBC(parent=Q_bc,scalar='temperature',value=temperature)
         model.add_bcs([Q_bc,salt_bc,temp_bc])
         

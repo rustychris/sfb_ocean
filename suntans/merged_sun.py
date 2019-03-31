@@ -65,6 +65,9 @@ grid_dir="grid-merged"
 # magic
 z_offset_manual=-5
 drv.SuntansModel.sun_bin_dir="/home/rusty/src/suntans/main"
+# AVOID anaconda mpi (at least if suntans is compiled with system mpi)
+drv.SuntansModel.mpi_bin_dir="/usr/bin/"
+
 # merge_001: initial trial of combined grid
 
 if not args.resume:
@@ -158,10 +161,6 @@ if args.resume is None:
 # spatially varying
 hycom_ll_box=[-124.9, -121.7, 35.9, 39.0]
 
-ocean_salt_bc=drv.HycomMultiScalarBC(name='Ocean',scalar='salinity',cache_dir=cache_dir,ll_box=hycom_ll_box)
-ocean_temp_bc=drv.HycomMultiScalarBC(name='Ocean',scalar='temperature',cache_dir=cache_dir,ll_box=hycom_ll_box,)
-model.add_bcs([ocean_salt_bc,ocean_temp_bc]) 
-
 if ocean_method=='eta':
     ocean_bc=drv.MultiBC(drv.OTPSStageBC,name='Ocean',otps_model='wc')
     ocean_offset_bc=drv.StageBC(name='Ocean',mode='add',z=z_offset_manual)
@@ -178,10 +177,18 @@ elif ocean_method=='hycom':
 
 model.add_bcs(ocean_bc)
 
+ocean_salt_bc=drv.HycomMultiScalarBC(name='Ocean',scalar='salinity',cache_dir=cache_dir,ll_box=hycom_ll_box)
+ocean_temp_bc=drv.HycomMultiScalarBC(name='Ocean',scalar='temperature',cache_dir=cache_dir,ll_box=hycom_ll_box,)
+model.add_bcs([ocean_salt_bc,ocean_temp_bc]) 
+
 import sfb_common
 sfb_common.add_delta_bcs(model,cache_dir)
 sfb_common.add_usgs_stream_bcs(model,cache_dir)  # disable if no internet
 sfb_common.add_potw_bcs(model,cache_dir)
+
+import coamps_sfei_wind
+print("Adding WIND")
+coamps_sfei_wind.add_wind(model,cache_dir)
 
 ##
 
@@ -213,6 +220,7 @@ if __name__=='__main__':
     if args.write_grid:
         model.grid.write_ugrid(args.write_grid,overwrite=True)
     else:
+        print("Num procs A: ",model.num_procs)
         model.write()
         try:
             script=__file__
@@ -225,6 +233,8 @@ if __name__=='__main__':
         if args.resume is None:
             set_ic(model)
             model.write_ic_ds()
+        print("Num procs B: ",model.num_procs)
         model.partition()
+        print("Num procs C: ",model.num_procs)
         model.run_simulation()
 
