@@ -43,6 +43,8 @@ parser.add_argument("-d", "--dir", help="Run directory",
                     default="runs/bay007")
 parser.add_argument("-r", "--resume", help="Resume from run",
                     default=None)
+parser.add_argument("--ocean",help="Set ocean forcing method",
+                    default="velocity-hycom+otps")
 parser.add_argument("-g","--write-grid", help="Write grid to ugrid")
 
 if __name__=='__main__':
@@ -59,7 +61,7 @@ read_otps.OTPS_DATA='../derived'
 
 use_temp=True
 use_salt=True
-ocean_method='hycom'
+ocean_method=args.ocean # 'hycom'
 grid_dir="grid-merged"
 # moving to have all of the elevation offset stuff more manual, less
 # magic
@@ -68,26 +70,31 @@ drv.SuntansModel.sun_bin_dir="/home/rusty/src/suntans/main"
 # AVOID anaconda mpi (at least if suntans is compiled with system mpi)
 drv.SuntansModel.mpi_bin_dir="/usr/bin/"
 
-# merge_001: initial trial of combined grid
-
 if not args.resume:
     # HYCOM experiments change just before 2017-06-15
     model=drv.SuntansModel()
     model.num_procs=16
     model.load_template("sun-template.dat")
 
-    model.config['Nkmax']=35
+    model.config['Nkmax']=50
     model.config['stairstep']=0
     model.dredge_depth=-2 + z_offset_manual # 2m below the offset of -5m.
 
     dt_secs=5.0
     model.config['dt']=dt_secs
-    # 30 minute map output:
-    model.config['ntout']=int(30*60/dt_secs)
-    # model.config['ntout']=1 # for debugging
+    # had been ramping at 86400, but don't linger so much...
+    model.config['thetaramptime']=43200
+    
+    model.config['ntout']=int(30*60/dt_secs) # 30 minutes
     model.config['ntoutStore']=int(86400/dt_secs) # daily
-    model.config['mergeArrays']=0
-    model.config['rstretch']=1.1
+    # 10 days
+    model.config['nstepsperncfile']=int( 10*86400/(int(model.config['ntout'])*dt_secs) )
+    model.config['mergeArrays']=1
+    model.config['ntaverage']=model.config['ntout']
+    model.config['calcaverage']=1
+    model.config['averageNetcdfFile']="average.nc"
+    
+    model.config['rstretch']=1.12 # about 1.7m surface layer thickness
     model.config['Cmax']=30.0 # volumetric is a better test, this is more a backup.
 
     # esp. with edge depths, seems better to use z0B so that very shallow
@@ -161,19 +168,24 @@ if args.resume is None:
 # spatially varying
 hycom_ll_box=[-124.9, -121.7, 35.9, 39.0]
 
-if ocean_method=='eta':
+if ocean_method=='eta-otps':
     ocean_bc=drv.MultiBC(drv.OTPSStageBC,name='Ocean',otps_model='wc')
     ocean_offset_bc=drv.StageBC(name='Ocean',mode='add',z=z_offset_manual)
-elif ocean_method=='flux':
+elif ocean_method=='flux-otps':
     ocean_bc=drv.MultiBC(drv.OTPSFlowBC,name='Ocean',otps_model='wc')
-elif ocean_method=='velocity':
+elif ocean_method=='velocity-otps':
     ocean_bc=drv.MultiBC(drv.OTPSVelocityBC,name='Ocean',otps_model='wc')
-elif ocean_method=='hycom':
+elif ocean_method.startswith('velocity-hycom'):
     # explicity give bounds to make sure we always download the same
     # subset.
     ocean_bc=drv.HycomMultiVelocityBC(ll_box=hycom_ll_box,
-                                      name='Ocean',cache_dir=cache_dir)
-    model.add_bcs(drv.MultiBC(drv.OTPSVelocityBC,name='Ocean',otps_model='wc',mode='add'))
+                                      name='Ocean',cache_dir=cache_dir,
+                                      z_offset=z_offset_manual)
+    if ocean_method=='velocity-hycom+otps':
+        log.info("Including OTPS in addition to HYCOM")
+        model.add_bcs(drv.MultiBC(drv.OTPSVelocityBC,name='Ocean',otps_model='wc',mode='add'))
+    else:        
+        log.info("Will *not* add OTPS to HYCOM")
 
 model.add_bcs(ocean_bc)
 
@@ -187,8 +199,8 @@ sfb_common.add_usgs_stream_bcs(model,cache_dir)  # disable if no internet
 sfb_common.add_potw_bcs(model,cache_dir)
 
 import coamps_sfei_wind
-print("Adding WIND")
-coamps_sfei_wind.add_wind(model,cache_dir)
+log.info("Adding WIND")
+coamps_sfei_wind.add_wind_preblended(model,cache_dir)
 
 ##
 
@@ -220,12 +232,11 @@ if __name__=='__main__':
     if args.write_grid:
         model.grid.write_ugrid(args.write_grid,overwrite=True)
     else:
-        print("Num procs A: ",model.num_procs)
         model.write()
         try:
             script=__file__
         except NameError:
-            print("__file__ not defined.  cannot copy script")
+            log.warning("__file__ not defined.  cannot copy script")
             script=None 
         if script:
             shutil.copy(script,model.run_dir)
@@ -233,8 +244,6 @@ if __name__=='__main__':
         if args.resume is None:
             set_ic(model)
             model.write_ic_ds()
-        print("Num procs B: ",model.num_procs)
         model.partition()
-        print("Num procs C: ",model.num_procs)
         model.run_simulation()
 
