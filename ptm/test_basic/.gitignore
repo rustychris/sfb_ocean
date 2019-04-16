@@ -1,0 +1,12 @@
+*.out
+*.txt
+*.log
+*release_log
+*.prn
+*.met
+*.grd_geom
+*.grd_log
+*~
+*.idx
+fort.*
+

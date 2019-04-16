@@ -1,0 +1,92 @@
+ GLOBAL INFORMATION
+   END_TIME = '2017-06-19 00:00:00'
+   RESTART_DIR = 'none'
+   TIME_STEP_SECONDS = 180.
+ 
+   -- deactivation logicals ---
+   REACHED_OPEN_BOUNDARY = 'true'
+   REACHED_FLOW_BOUNDARY = 'true'
+   ENTRAINED_BY_VOLUME_SINK = 'false'
+   CROSSED_LINE = 'false'
+   DEPOSITED_ON_BED = 'false'
+   CONSOLIDATED_ON_BED = 'false'
+ 
+   -- kill logicals ---
+   REACHED_OPEN_BOUNDARY = 'false'
+   REACHED_FLOW_BOUNDARY = 'false'
+   ENTRAINED_BY_VOLUME_SINK = 'false'
+   CROSSED_LINE = 'false'
+   DEPOSITED_ON_BED = 'false'
+   CONSOLIDATED_ON_BED = 'false'
+ 
+   -- line information --- 
+   NLINES = 0
+
+ TRANSECT INFORMATION -- applies to tidal surfing
+   NTRANSECTS = 0
+
+ REGION INFORMATION
+   NREGIONS = 1
+     -- -- region  1 --- 
+     REGION = 'central_bay'
+     REGION_POLYGON_FILE = 'central_bay.pol'
+
+ RELEASE DISTRIBUTION INFORMATION
+   NRELEASE_DISTRIBUTION_SETS = 1
+
+   -- release distribution set 1 ---
+   RELEASE_DISTRIBUTION_SET = 'PERCELL' 
+   MIN_BED_ELEVATION_METERS = -99.
+   MAX_BED_ELEVATION_METERS =  99. 
+   HORIZONTAL_DISTRIBUTION = 'region'
+   DISTRIBUTION_IN_REGION = 'cell'
+     -- RH not sure what this does, but distributed was not implemented.
+     -- so how about independent, the only other option.
+     CELL_RELEASE_TIMING = 'independent'
+     PARTICLE_NUMBER_CALCULATION_BASIS = 'volume'
+     -- aim high 
+     VOLUME_PER_PARTICLE_CUBIC_METERS = 10000.
+   ZMIN_NON_DIM = 0.90
+   ZMAX_NON_DIM = 1.00
+   VERT_SPACING = 'uniform'
+
+ RELEASE TIMING INFORMATION
+   NRELEASE_TIMING_SETS = 1
+
+   -- release timing set 2 ---        
+   RELEASE_TIMING_SET = 'once'
+   INITIAL_RELEASE_TIME = '2017/06/18 00:00:00'
+   RELEASE_TIMING = 'single'
+   INACTIVATION_TIME = 'none'
+
+ -- BEHAVIOR INFORMATION
+   NBEHAVIOR_PROFILES = 0
+
+   NBEHAVIORS = 0
+
+ OUTPUT INFORMATION 
+   NOUTPUT_SETS = 1
+
+   -- output set 1 ---
+   OUTPUT_SET = '6min_output'
+   FLAG_LOG_LOGICAL = 'true'
+   BINARY_OUTPUT_INTERVAL_HOURS = 0.10
+   ASCII_OUTPUT_INTERVAL_HOURS = 'none' 
+   HISTOGRAM_OUTPUT_INTERVAL_HOURS = 'none'
+   STATISTICS_OUTPUT_INTERVAL_HOURS = 0.50
+   CONCENTRATION_OUTPUT_INTERVAL_HOURS = 1.00
+   REGION_COUNT_OUTPUT_INTERVAL_HOURS = 0.50
+   REGION_COUNT_UPDATE_INTERVAL_HOURS = 0.50
+   STATE_OUTPUT_INTERVAL_HOURS = 'none'
+
+ PARTICLE GROUP INFORMATION 
+ NGROUPS = 1
+   -- group 1 ---
+   GROUP = 'initial'
+   RELEASE_DISTRIBUTION_SET = 'PERCELL'
+   REGION = 'central_bay'
+   RELEASE_TIMING_SET = 'once'
+   PARTICLE_TYPE = 'none'
+   BEHAVIOR_SET = 'none'
+   OUTPUT_SET = '6min_output'
+   OUTPUT_FILE_BASE = 'FIXSURF'
