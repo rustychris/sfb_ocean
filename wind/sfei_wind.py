@@ -8,11 +8,11 @@
 # User Input
 #--------------------------------------------------------------------------------------#
 # specify start and end times in format yyyy-mm-dd HH:MM
-start_time_string = '2017-08-01 00:00'
-end_time_string = '2017-09-01 00:00'
+start_time_string = '2017-09-01 00:00'
+end_time_string = '2017-10-01 00:00'
 
 # specify filename prefilx for *.amu/*.amv files
-outfileprefix = 'wind_natneighbor_201708'
+outfileprefix = 'wind_natneighbor_201709'
 
 # pick interpolation method (natural neighbor or linear is recommended):
 #   'nearest' = nearest neighbor

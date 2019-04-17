@@ -4,6 +4,8 @@ from stompy.grid import unstructured_grid
 from stompy.spatial import field
 from stompy import utils
 import logging
+import os
+import glob
 import numpy as np
 import six
 import xarray as xr
@@ -11,6 +13,24 @@ from shapely import geometry
 from shapely.ops import cascaded_union
 
 from stompy.io.local import coamps
+
+wind_dir=os.path.join(os.path.dirname(__file__),"..","wind")
+
+def blended_dataset(period_start,period_stop):
+    import glob
+
+    files=glob.glob(os.path.join(wind_dir,"wind_natneighbor_*.nc"))
+    files.sort()
+
+    hits=[] # datasets overlapping the requested period
+    for fn in files:
+        ds=xr.open_dataset(fn)
+        if (ds.time.values[0]<=period_stop) and (ds.time.values[-1]>=period_start):
+            hits.append(ds)
+        else:
+            ds.close()
+    blended_ds=xr.concat(hits,dim='time')
+    return blended_ds
 
 def add_wind_preblended(model,cache_dir,pad=np.timedelta64(3*3600,'s')):
     """
@@ -29,11 +49,11 @@ def add_wind_preblended(model,cache_dir,pad=np.timedelta64(3*3600,'s')):
     #  - already in UTC
     #  - larger footprint, coarser grid
     #  - natural neighbors run on the observed + COAMPS (thinned).
-    blended_ds=xr.open_dataset('wind_natneighbor_201706.nc')
+    blended_ds=blended_dataset(period_start,period_stop)
     
     # Not ready for other years
-    assert blended_ds.time.values[0] <= period_start,"FIX: pre-blended wind only setup for 2017-06"
-    assert blended_ds.time.values[-1] >= period_stop,"FIX: pre-blended wind only setup for 2017-06"
+    assert blended_ds.time.values[0] <= period_start,"FIX: pre-blended wind only set up for some of 2017"
+    assert blended_ds.time.values[-1] >= period_stop,"FIX: pre-blended wind only set up for some of 2017"
 
     # buffer out the model domain a bit to get a generous footprint
     g_poly=geometry.Polygon(g.boundary_polygon().exterior).buffer(3000)
