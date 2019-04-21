@@ -1,0 +1,46 @@
+  -- INPUT FILE FORMAT DOCUMENTATION --------------------------------------------
+ -- 
+ -- The input file format follows sql syntax conventions. An editor that 
+ -- recognizes sql syntax will color code syntax appropriately.
+ -- 
+ -- documentation conventions:
+ --   grouping is indicated by indentation
+ --   [value1:value2] - indicates valid range of values
+ --   {value1|value2|value3|...} - indicates valid values
+ --   <type> - indicates variable type
+ --   'none' = value - indicates default value of varaible
+ --   Ex: - precedes an example value
+ --
+ -- input file conventions:
+ --   each input value should appear on its own line
+ --   all character strings are indicated in quotes
+ --   'none' - indicates that a default value should be used. Only valid
+ --            for some variables.
+ --   -- - precedes comments
+ --
+ -- NUM_FILES = <integer> [0,99] -- number of input files
+ -- for n=1:NUM_FILES
+ --   HYDRO_FILE_PATH = <character string> 
+ --   FILENAME = <character string> 
+ --   GRD_NAME = <character string> 
+ --  
+ --  
+ -- END DOCUMENTATION ---------------------------------------------------------
+
+ NUM_FILES =  3
+ -- INPUT_FILE 1 --
+ HYDRO_FILE_PATH = '/opt2/sfb_ocean/suntans/runs/merge_007-20170607/'
+ FILENAME = 'ptm_hydro_0000.nc'
+ GRD_NAME = 'ptm_hydro_0000.nc'
+
+ -- INPUT_FILE 2 --
+ HYDRO_FILE_PATH = '/opt2/sfb_ocean/suntans/runs/merge_007-20170607/'
+ FILENAME = 'ptm_hydro_0001.nc'
+ GRD_NAME = 'ptm_hydro_0001.nc'
+
+ -- INPUT_FILE 3 --
+ HYDRO_FILE_PATH = '/opt2/sfb_ocean/suntans/runs/merge_007-20170607/'
+ FILENAME = 'ptm_hydro_0002.nc'
+ GRD_NAME = 'ptm_hydro_0002.nc'
+
+

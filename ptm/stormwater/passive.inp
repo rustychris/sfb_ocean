@@ -1,0 +1,4 @@
+NLAYERS = 1 
+DISTANCE_OPTION = 'depth'
+LAYER_DEPTH      LAYER_SPEED(m/s)
+0.0              0.00
