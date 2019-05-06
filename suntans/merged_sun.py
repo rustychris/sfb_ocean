@@ -9,7 +9,6 @@ import datetime
 import matplotlib.pyplot as plt
 import numpy as np
 import xarray as xr
-from stompy.model import otps
 from stompy import utils, filters
 
 import logging as log
@@ -52,8 +51,8 @@ if __name__=='__main__':
 else:
     # For manually running the script.
     # args=parser.parse_args(["-g","grid-connectivity.nc"])
-    raise Exception("Update args")
-
+    args=parser.parse_args(["-s","2017-06-05","-e","2017-06-10","-d","test"])
+    #raise Exception("Update args")
 
 ##
 
@@ -64,8 +63,12 @@ use_salt=True
 ocean_method=args.ocean # 'hycom'
 grid_dir="grid-merged"
 # moving to have all of the elevation offset stuff more manual, less
-# magic
-z_offset_manual=-5
+# magic.  This gives the difference between model 0 and NAVD88.
+z_offset_manual=-5 # m
+# at Point Reyes, via tidesandcurrents.noaa.gov.  I.e. MSL is 0.94 NAVD88,
+# or (-5+0.94) m in the model datum.
+msl_navd88=0.94 # m
+
 drv.SuntansModel.sun_bin_dir="/home/rusty/src/suntans/main"
 # AVOID anaconda mpi (at least if suntans is compiled with system mpi)
 drv.SuntansModel.mpi_bin_dir="/usr/bin/"
@@ -87,8 +90,8 @@ if not args.resume:
     
     model.config['ntout']=int(30*60/dt_secs) # 30 minutes
     model.config['ntoutStore']=int(86400/dt_secs) # daily
-    # 10 days
-    model.config['nstepsperncfile']=int( 10*86400/(int(model.config['ntout'])*dt_secs) )
+    # 1 day while testing
+    model.config['nstepsperncfile']=int( 1*86400/(int(model.config['ntout'])*dt_secs) )
     model.config['mergeArrays']=1
     model.config['ntaverage']=model.config['ntout']
     model.config['calcaverage']=1
@@ -167,43 +170,91 @@ if args.resume is None:
 
 # spatially varying
 hycom_ll_box=[-124.9, -121.7, 35.9, 39.0]
+ocean_bcs=[]
 
 if ocean_method=='eta-otps':
     ocean_bc=drv.MultiBC(drv.OTPSStageBC,name='Ocean',otps_model='wc')
     ocean_offset_bc=drv.StageBC(name='Ocean',mode='add',z=z_offset_manual)
+    ocean_bcs+= [ocean_bc,ocean_offset_bc]
 elif ocean_method=='flux-otps':
     ocean_bc=drv.MultiBC(drv.OTPSFlowBC,name='Ocean',otps_model='wc')
+    ocean_bcs.append(ocean_bc)
 elif ocean_method=='velocity-otps':
     ocean_bc=drv.MultiBC(drv.OTPSVelocityBC,name='Ocean',otps_model='wc')
+    ocean_bcs.append(ocean_bc)
 elif ocean_method.startswith('velocity-hycom'):
     # explicity give bounds to make sure we always download the same
     # subset.
+    # z_offset here is the elevation of MSL in the model vertical datum.
+    # NAVD88 is offset by z_offset_manual, but MSL is a bit higher than
+    # that.
     ocean_bc=drv.HycomMultiVelocityBC(ll_box=hycom_ll_box,
                                       name='Ocean',cache_dir=cache_dir,
-                                      z_offset=z_offset_manual)
+                                      z_offset=z_offset_manual+msl_navd88)
+    ocean_bcs.append(ocean_bc)
+    
     if ocean_method=='velocity-hycom+otps':
         log.info("Including OTPS in addition to HYCOM")
-        model.add_bcs(drv.MultiBC(drv.OTPSVelocityBC,name='Ocean',otps_model='wc',mode='add'))
+        ocean_tidal_bc=drv.MultiBC(drv.OTPSVelocityBC,name='Ocean',otps_model='wc',mode='add')        
+        ocean_bcs.append(ocean_tidal_bc)
     else:        
         log.info("Will *not* add OTPS to HYCOM")
 
-model.add_bcs(ocean_bc)
+    for ocean_shore in ["Ocean-north-shore",
+                        "Ocean-south-shore"]:
+        ocean_shore_bc=drv.MultiBC(drv.OTPSStageBC,name=ocean_shore,otps_model='wc')
+        offset_bc=drv.StageBC(name=ocean_shore,mode='add',z=z_offset_manual+msl_navd88)
+        shore_salt_bc=drv.HycomMultiScalarBC(name=ocean_shore,parent=ocean_shore_bc,
+                                             scalar='salinity',cache_dir=cache_dir,ll_box=hycom_ll_box)
+        shore_temp_bc=drv.HycomMultiScalarBC(name=ocean_shore,parent=ocean_shore_bc,
+                                             scalar='temperature',cache_dir=cache_dir,ll_box=hycom_ll_box)
+        ocean_bcs += [ocean_shore_bc,offset_bc,shore_salt_bc,shore_temp_bc]
 
 ocean_salt_bc=drv.HycomMultiScalarBC(name='Ocean',scalar='salinity',cache_dir=cache_dir,ll_box=hycom_ll_box)
 ocean_temp_bc=drv.HycomMultiScalarBC(name='Ocean',scalar='temperature',cache_dir=cache_dir,ll_box=hycom_ll_box,)
-model.add_bcs([ocean_salt_bc,ocean_temp_bc]) 
+ocean_bcs+=[ocean_salt_bc,ocean_temp_bc]
+
+model.add_bcs(ocean_bcs)
 
 import sfb_common
 sfb_common.add_delta_bcs(model,cache_dir)
 sfb_common.add_usgs_stream_bcs(model,cache_dir)  # disable if no internet
 sfb_common.add_potw_bcs(model,cache_dir)
 
+##
+from stompy.io.local import coamps
 import coamps_sfei_wind
+six.moves.reload_module(coamps_sfei_wind)
 log.info("Adding WIND")
 coamps_sfei_wind.add_wind_preblended(model,cache_dir)
 
 ##
 
+# Air temp for met model
+import coamps_temp
+six.moves.reload_module(coamps_temp)
+if 0: 
+    coamps_temp.add_coamps_fields(model,cache_dir,
+                                  [('air_temp','Tair'),
+                                   ('rltv_hum','RH')])
+    model.config['metmodel']=1 # wood et al?
+if 1:
+    # turns out grnd_sea_temp is (a) in Kelvin, and (b)
+    # likely has a lot of bleed from land into water.
+
+    # land=1, sea=0
+    land_sea=field.GdalGrid('coamps_land_sea')
+
+    coamps_temp.add_coamps_fields(model,cache_dir,
+                                  [('grnd_sea_temp','Tair'),
+                                   ('land_sea','landmask') #debugging
+                                  ],
+                                  mask_field=land_sea)
+    model.met_ds.Tair.values[:] -= 273.15 # Kelvin to Celsius
+    assert model.met_ds.Tair.values.min()>=0.0,"Maybe bad K->C conversion"
+    model.config['metmodel']=5 # nudge
+
+##
 def set_ic(model):
     # Start with USGS Polaris 
     if 1: 
@@ -226,7 +277,7 @@ def set_ic(model):
         hycom_ic.set_ic_from_hycom(model,hycom_ll_box,cache_dir,default_s=None,default_T=None)
 
     if 1: # set freesurface
-        model.ic_ds.eta.isel(time=0).values[...]=z_offset_manual
+        model.ic_ds.eta.isel(time=0).values[...]=z_offset_manual+msl_navd88
 
 if __name__=='__main__':
     if args.write_grid:
