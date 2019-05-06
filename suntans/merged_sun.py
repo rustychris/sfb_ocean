@@ -51,8 +51,8 @@ if __name__=='__main__':
     args=parser.parse_args()
 else:
     # For manually running the script.
-    # args=parser.parse_args(["-g","grid-connectivity.nc"])
-    raise Exception("Update args")
+    args=parser.parse_args(["-s","2017-06-10","-e","2017-06-12","-d","runs/heatflux-v00"])
+    # raise Exception("Update args")
 
 
 ##
