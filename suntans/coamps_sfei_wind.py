@@ -138,7 +138,8 @@ def add_wind_preblended(model,cache_dir,pad=np.timedelta64(3*3600,'s')):
 
 
 def add_wind_coamps_sfei(model,cache_dir,pad=np.timedelta64(3*3600,'s'),
-             coamps_buffer=30e3):
+                         coamps_buffer=30e3,
+                         air_temp=False):
     """
     model: A HydroModel instance
     cache_dir: path for caching wind data
@@ -150,15 +151,22 @@ def add_wind_coamps_sfei(model,cache_dir,pad=np.timedelta64(3*3600,'s'),
     This method does not work so well with SUNTANS.  The available interpolation
     methods (inverse distance and kriging) do not deal well with having two 
     distinct, densely sampled datasets with a gap in between.
+
+    air_temp: if 'coamps', fill in air temperature samples from coamps data.
     """
     g=model.grid
     
     period_start=model.run_start - pad
     period_stop=model.run_stop + pad
 
-    coamps_ds=coamps.coamps_press_windxy_dataset(g.bounds(),
-                                                 period_start,period_stop,
-                                                 cache_dir=cache_dir)
+    fields=['wnd_utru','wnd_vtru','pres_msl']
+    if air_temp=='coamps':
+        # may add sol_rad at some point...
+        fields += ['air_temp','rltv_hum']
+    coamps_ds=coamps.coamps_dataset(g.bounds(),
+                                    period_start,period_stop,
+                                    cache_dir=cache_dir,
+                                    fields=fields)
 
     sfei_ds=xr.open_dataset('wind_natneighbor_WY2017.nc')
     # SFEI data is PST
