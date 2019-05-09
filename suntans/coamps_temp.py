@@ -67,4 +67,4 @@ def add_coamps_fields(model,cache_dir,fields=[('air_temp','Tair'),
         met_ds['z_'+sun_name]=("N"+sun_name),10.0*np.ones_like(xcoords)
 
         met_ds[sun_name]=(('nt','N'+sun_name),
-                          src_sub_ds[coamps_name].values[:,mask][ravel_mask])
+                          src_sub_ds[coamps_name].values[:,mask][:,ravel_mask])

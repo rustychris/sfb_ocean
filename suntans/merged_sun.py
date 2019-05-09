@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import xarray as xr
 from stompy import utils, filters
+from stompy.spatial import field
 
 import logging as log
 
@@ -51,7 +52,7 @@ if __name__=='__main__':
 else:
     # For manually running the script.
     # args=parser.parse_args(["-g","grid-connectivity.nc"])
-    args=parser.parse_args(["-s","2017-06-05","-e","2017-06-10","-d","test"])
+    args=parser.parse_args(["-s","2017-06-01","-e","2017-06-05","-d","test-met5-KtoC"])
     #raise Exception("Update args")
 
 ##
@@ -88,14 +89,14 @@ if not args.resume:
     # had been ramping at 86400, but don't linger so much...
     model.config['thetaramptime']=43200
     
-    model.config['ntout']=int(30*60/dt_secs) # 30 minutes
+    model.config['ntout']=int(30*60/dt_secs) # 30 minutes, but can delete it
+    model.config['ntaverage']=int(30*60/dt_secs) # 30 minutes
     model.config['ntoutStore']=int(86400/dt_secs) # daily
-    # 1 day while testing
-    model.config['nstepsperncfile']=int( 1*86400/(int(model.config['ntout'])*dt_secs) )
-    model.config['mergeArrays']=1
-    model.config['ntaverage']=model.config['ntout']
     model.config['calcaverage']=1
     model.config['averageNetcdfFile']="average.nc"
+    # 5 days per average file
+    model.config['nstepsperncfile']=int( 5*86400/(int(model.config['ntaverage'])*dt_secs) )
+    model.config['mergeArrays']=1
     
     model.config['rstretch']=1.12 # about 1.7m surface layer thickness
     model.config['Cmax']=30.0 # volumetric is a better test, this is more a backup.
@@ -243,12 +244,12 @@ if 1:
     # likely has a lot of bleed from land into water.
 
     # land=1, sea=0
-    land_sea=field.GdalGrid('coamps_land_sea')
+    land_sea_raw=field.GdalGrid('coamps_land_sea')
+    # Reproject to UTM
+    land_sea=land_sea_raw.warp("EPSG:26910")
 
     coamps_temp.add_coamps_fields(model,cache_dir,
-                                  [('grnd_sea_temp','Tair'),
-                                   ('land_sea','landmask') #debugging
-                                  ],
+                                  [('grnd_sea_temp','Tair') ],
                                   mask_field=land_sea)
     model.met_ds.Tair.values[:] -= 273.15 # Kelvin to Celsius
     assert model.met_ds.Tair.values.min()>=0.0,"Maybe bad K->C conversion"
