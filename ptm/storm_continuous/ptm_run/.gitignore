@@ -1,0 +1,9 @@
+*log
+*idx
+*.out
+*grd_geom
+*.txt
+*.prn
+*.met
+fort.*
+
