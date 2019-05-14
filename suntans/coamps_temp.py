@@ -44,6 +44,7 @@ def add_coamps_fields(model,cache_dir,fields=[('air_temp','Tair'),
     # make sure these are aligned
     # somehow there are some 1 second errors in the met times.
     # allow slop up to 10 minutes
+    assert len( model.met_ds.nt.values) == len(src_sub_ds.time.values),"Mismatch in length of met_ds time and coamps ds time"
     assert np.all( np.abs( model.met_ds.nt.values - src_sub_ds.time.values) < np.timedelta64(600,'s') )
 
     X,Y=np.meshgrid(src_ds.x.values,src_ds.y.values)

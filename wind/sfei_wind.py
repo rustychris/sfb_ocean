@@ -8,11 +8,11 @@
 # User Input
 #--------------------------------------------------------------------------------------#
 # specify start and end times in format yyyy-mm-dd HH:MM
-start_time_string = '2017-05-01 00:00'
-end_time_string = '2017-06-01 00:00'
+start_time_string = '2018-03-01 00:00'
+end_time_string = '2018-04-01 00:00'
 
 # specify filename prefilx for *.amu/*.amv files
-outfileprefix = 'wind_natneighbor_201705'
+outfileprefix = 'wind_natneighbor_201803'
 
 # pick interpolation method (natural neighbor or linear is recommended):
 #   'nearest' = nearest neighbor
@@ -113,25 +113,46 @@ xg, yg = np.meshgrid(x, y)
 
 # read the observed wind data
 tz_offset=dt.timedelta(hours=8)
-# start_time,end_time are in UTC, so remove the offset when requesting data
-# from wlib which expects PST
-time_days, station_names, U10_obs = wlib.read_10m_wind_data_from_csv(os.path.join(windobspath,'SFB_hourly_U10_'), start_dt-tz_offset, end_dt-tz_offset)
-time_days, station_names, V10_obs = wlib.read_10m_wind_data_from_csv(os.path.join(windobspath,'SFB_hourly_V10_'), start_dt-tz_offset, end_dt-tz_offset)
+try:
+    # start_time,end_time are in UTC, so remove the offset when requesting data
+    # from wlib which expects PST
+    time_days, station_names, U10_obs = wlib.read_10m_wind_data_from_csv(os.path.join(windobspath,'SFB_hourly_U10_'), start_dt-tz_offset, end_dt-tz_offset)
+    time_days, station_names, V10_obs = wlib.read_10m_wind_data_from_csv(os.path.join(windobspath,'SFB_hourly_V10_'), start_dt-tz_offset, end_dt-tz_offset)
+except FileNotFoundError:
+    print("Okay - probably beyond the SFEI data")
+    U10_obs=V10_obs=None
 
-# note that time_days is just decimal days after start, so it doesn't need to be adjusted for timezone.
+if U10_obs is not None:    
+    # note that time_days is just decimal days after start, so it doesn't need to be adjusted for timezone.
 
-# read the coordinates of the wind observation stations
-df = pd.read_csv(os.path.join(windobspath,'station_coordinates.txt'))
-station_names_check = df['Station Organization-Name'].values
-x_obs = df['x (m - UTM Zone 10N)'].values
-y_obs = df['y (m - UTM Zone 10N)'].values
-Nstations = len(df)
-for snum in range(Nstations):
-    if not station_names[snum]==station_names_check[snum]:
-        raise('station names in station_coordinates.txt must match headers in SFB_hourly_U10_YEAR.csv and SFB_hourly_V10_YEAR.csv files')
+    # read the coordinates of the wind observation stations
+    df = pd.read_csv(os.path.join(windobspath,'station_coordinates.txt'))
+    station_names_check = df['Station Organization-Name'].values
+    x_obs = df['x (m - UTM Zone 10N)'].values
+    y_obs = df['y (m - UTM Zone 10N)'].values
+    Nstations = len(df)
+    for snum in range(Nstations):
+        if not station_names[snum]==station_names_check[snum]:
+            raise('station names in station_coordinates.txt must match headers in SFB_hourly_U10_YEAR.csv and SFB_hourly_V10_YEAR.csv files')
 
+else:
+    x_obs=np.zeros(0,np.float64)
+    y_obs=np.zeros(0,np.float64)
+    Nstations=0
+
+    # Fabricate time_days
+    all_times=[]
+    t=start_dt
+    interval=dt.timedelta(hours=1)
+    while t<=end_dt:
+        all_times.append(t)
+        t=t+interval
+    all_dt64=np.array([utils.to_dt64(t) for t in all_times])
+    time_days=(all_dt64-all_dt64[0])/np.timedelta64(1,'s') / 86400.
+    
 # zip the x, y coordinates for use in the griddata interpolation
-points = np.column_stack((x_obs,y_obs)) 
+points = np.column_stack((x_obs,y_obs))
+    
 
 # loop through all times, at each time step find all the non-nan data, and
 # interpolate it onto the model grid, then compile the data from all times 
@@ -151,15 +172,13 @@ for it in range(len(time_days)):
     if it%10==0:
         print("%d/%d steps"%(it,len(time_days)))
     
-    # find all non-nan data at this time step
-    igood = np.logical_and(~np.isnan(U10_obs[it,:]), ~np.isnan(V10_obs[it,:]))
-
     #-- augment with COAMPS output
     target_time=start_date+np.timedelta64(int(time_days[it]*86400),'s')
     if (coamps_ds is None) or (target_time>coamps_ds.time.values[-1]):
-        coamps_ds=coamps.coamps_press_windxy_dataset(bounds,
-                                                     target_time,target_time+np.timedelta64(1,'D'),
-                                                     cache_dir=cache_dir)
+        coamps_ds=coamps.coamps_dataset(bounds,
+                                        target_time,target_time+np.timedelta64(1,'D'),
+                                        cache_dir=cache_dir,
+                                        fields=['wnd_utru','wnd_vtru'])
         # reduce dataset size -- out in the ocean really don't need too many points
         coamps_ds=coamps_ds.isel(x=slice(None,None,2),y=slice(None,None,2))
 
@@ -177,21 +196,29 @@ for it in range(len(time_days)):
 
     coamps_time_idx=utils.nearest(coamps_ds.time,target_time)
     coamps_sub=coamps_ds.isel(time=coamps_time_idx)
-    
-    obs_xy=np.c_[x_obs[igood], y_obs[igood]]
 
     # Which coamps points are far enough from good observations.  there are
     # also some time where coamps data is missing
     # mask=np.ones(len(coamps_xy),np.bool8)
     mask=np.isfinite(coamps_sub.wind_u.values.ravel())
 
-    for xy in obs_xy:
-        mask=mask&mask_near_point(xy)
+    # find all non-nan data at this time step
+    if U10_obs is not None:
+        igood = np.logical_and(~np.isnan(U10_obs[it,:]), ~np.isnan(V10_obs[it,:]))
+        obs_xy=np.c_[x_obs[igood], y_obs[igood]]
 
-    input_xy=np.concatenate( [obs_xy,coamps_xy[mask]] )
-    input_U=np.concatenate( [U10_obs[it,igood], coamps_sub.wind_u.values.ravel()[mask]])
-    input_V=np.concatenate( [V10_obs[it,igood], coamps_sub.wind_v.values.ravel()[mask]])
+        for xy in obs_xy:
+            mask=mask&mask_near_point(xy)
 
+        input_xy=np.concatenate( [obs_xy,coamps_xy[mask]] )
+        input_U=np.concatenate( [U10_obs[it,igood], coamps_sub.wind_u.values.ravel()[mask]])
+        input_V=np.concatenate( [V10_obs[it,igood], coamps_sub.wind_v.values.ravel()[mask]])
+    else:
+        # No SFEI data --
+        input_xy=coamps_xy[mask]
+        input_U=coamps_sub.wind_u.values.ravel()[mask]
+        input_V=coamps_sub.wind_v.values.ravel()[mask]
+        
     if np.any(np.isnan(input_U)) or np.any(np.isnan(input_V)):
         import pdb
         pdb.set_trace()
@@ -231,14 +258,15 @@ for it in range(len(time_days)):
         V10g[ind] = V10g_nn[ind]
         
     # compile results together over time
+    # igood_all not updated for COAMPS, omit here.
     if it==0:
         U10g_all = np.expand_dims(U10g,axis=0)
         V10g_all = np.expand_dims(V10g,axis=0)
-        igood_all = np.expand_dims(igood,axis=0)
+        # igood_all = np.expand_dims(igood,axis=0)
     else:    
         U10g_all = np.append(U10g_all, np.expand_dims(U10g,axis=0), axis=0)
         V10g_all = np.append(V10g_all, np.expand_dims(V10g,axis=0), axis=0)
-        igood_all = np.append(igood_all, np.expand_dims(igood,axis=0), axis=0)
+        # igood_all = np.append(igood_all, np.expand_dims(igood,axis=0), axis=0)
 
 
 ##

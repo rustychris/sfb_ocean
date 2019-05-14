@@ -43,6 +43,8 @@ parser.add_argument("-d", "--dir", help="Run directory",
                     default="runs/bay007")
 parser.add_argument("-r", "--resume", help="Resume from run",
                     default=None)
+parser.add_argument("-n", "--dryrun", help="Do not actually partition or run the simulation",
+                    action='store_true')
 parser.add_argument("--ocean",help="Set ocean forcing method",
                     default="velocity-hycom+otps")
 parser.add_argument("-g","--write-grid", help="Write grid to ugrid")
@@ -52,7 +54,10 @@ if __name__=='__main__':
 else:
     # For manually running the script.
     # args=parser.parse_args(["-g","grid-connectivity.nc"])
-    args=parser.parse_args(["-s","2017-06-01","-e","2017-06-05","-d","test-met5-KtoC"])
+    # args=parser.parse_args(["-s","2017-06-01","-e","2017-06-05","-d","test-met5-KtoC"])
+    args=parser.parse_args(["-r","/opt2/sfb_ocean/suntans/runs/merge_009-20170801/",
+                            "-e","2017-10-01T12:00:00",
+                            "-d","/opt2/sfb_ocean/suntans/runs/merge_009-20170901"])
     #raise Exception("Update args")
 
 ##
@@ -144,7 +149,7 @@ model.projection="EPSG:26910"
 model.run_stop=np.datetime64(args.end)
 
 # run_dir='/opt/sfb_ocean/suntans/runs/merge_001-20170601'
-model.set_run_dir(args.dir,mode='pristine')
+model.set_run_dir(args.dir,mode='askclobber')
     
 model.add_gazetteer(os.path.join(grid_dir,"linear_features.shp"))
 model.add_gazetteer(os.path.join(grid_dir,"point_features.shp"))
@@ -229,6 +234,8 @@ six.moves.reload_module(coamps_sfei_wind)
 log.info("Adding WIND")
 coamps_sfei_wind.add_wind_preblended(model,cache_dir)
 
+assert (np.diff(model.met_ds.nt.values)/np.timedelta64(1,'s')).min() > 0
+
 ##
 
 # Air temp for met model
@@ -296,6 +303,8 @@ if __name__=='__main__':
         if args.resume is None:
             set_ic(model)
             model.write_ic_ds()
-        model.partition()
-        model.run_simulation()
+
+        if not args.dryrun:
+            model.partition()
+            model.run_simulation()
 

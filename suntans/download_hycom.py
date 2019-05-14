@@ -24,8 +24,8 @@ six.moves.reload_module(hycom)
 run_start=np.datetime64("2017-06-15")
 run_stop =np.datetime64("2018-01-31")
 
-hycom_lon_range=[-124.7, -121.7 ]
-hycom_lat_range=[36.2, 38.85]
+hycom_lon_range=[-124.9, -121.7 ]
+hycom_lat_range=[35.9, 39.0]
 coastal_pad=np.timedelta64(10,'D') # lots of padding to avoid ringing from butterworth
 coastal_time_range=[run_start-coastal_pad,run_stop+coastal_pad]
 
