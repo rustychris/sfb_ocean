@@ -1,8 +1,9 @@
 import os
 import glob
+import six
 from stompy.model.fish_ptm import ptm_tools, ptm_config
 from stompy.model.suntans import sun_driver
-
+six.moves.reload_module(ptm_config)
 import numpy as np
 
 ## 
@@ -12,34 +13,76 @@ model.load_bc_ds()
 ##
 
 class Config(ptm_config.PtmConfig):
+    # positive: up, negative: down
+    rising_speeds_mps=[0.06,0.02,0.006,0.002,0.0006,
+                       0,
+                       -0.06,-0.02,-0.006,-0.002,-0.0006]
+    # slim that down some
+    rising_speeds_mps=[0.02,0,-0.02]
+    @property
+    def behavior_names(self):
+        names=[]
+        for b_idx,w_mps in enumerate(self.rising_speeds_mps):
+            if w_mps>0: # rising
+                name="up%d"%(1e6*w_mps)
+            elif w_mps<0:
+                name="down%d"%(-1e6*w_mps)
+            else:
+                name="none"
+            names.append(name)
+        return names
+        
     def add_behaviors(self):
         self.lines+=["""\
 BEHAVIOR INFORMATION
    NBEHAVIOR_PROFILES = 0
-   NBEHAVIORS = 2
-
-   -- behavior 1 ---
-     BEHAVIOR_SET = 'down20000'
+   NBEHAVIORS = {nbehaviors}
+""".format(nbehaviors=len([x for x in self.rising_speeds_mps if x!=0]))
+        ]
+        
+        for b_idx,(name,w_mps) in enumerate(zip(self.behavior_names,self.rising_speeds_mps)):
+            if w_mps==0:
+                continue # no need to write 0
+            if w_mps>0: # rising
+                dist_option="depth"
+            else: #  w_mps<0
+                dist_option="height_above_bed"
+            
+            fname=name+".inp"
+            self.lines+=[
+"""   -- behavior {idx} ---
+     BEHAVIOR_SET = '{name}'
      BEHAVIOR_DIMENSION = 'vertical'
      BEHAVIOR_TYPE = 'specified'
-     BEHAVIOR_FILENAME = 'down_20000.inp'
-  
-   -- behavior 2 ---
-     BEHAVIOR_SET = 'up20000'
-     BEHAVIOR_DIMENSION = 'vertical'
-     BEHAVIOR_TYPE = 'specified'
-     BEHAVIOR_FILENAME = 'up_20000.inp'
+     BEHAVIOR_FILENAME = '{fname}'
+""".format(idx=b_idx+1,name=name,fname=fname)]
 
-"""]
+            with open(os.path.join(self.run_dir,fname),'wt') as fp:
+                fp.write("""\
+ -- {w_mps} m/s
+ -- NUMBER_OF_LAYERS = <integer>
+ -- DISTANCE_OPTION = {{'depth', 'elevation' or 'height_above_bed'}}
+ NLAYERS = 2
+ DISTANCE_OPTION = '{dist_option}'
+                          LAYER_1         LAYER 2
+YYYY-MM-DD HH:MM:SS      DISTANCE SPEED  DISTANCE   SPEED
+1990-01-01 00:00:00        0.500   0.000   0.6      {w_mps:.6f}
+1990-01-01 01:00:00        0.500   0.000   0.6      {w_mps:.6f}
+2030-01-01 00:00:00        0.500   0.000   0.6      {w_mps:.6f}
+2030-01-01 01:00:00        0.500   0.000   0.6      {w_mps:.6f}"""
+                         .format(dist_option=dist_option,w_mps=w_mps) )
+            
 
 cfg=Config()
-cfg.rel_time=model.run_start+np.timedelta64(3600,'s')
+
+cfg.rel_time=model.run_start+5*24*np.timedelta64(1,'h')
 # 1 day while testing:
 # cfg.end_time=cfg.rel_time + np.timedelta64(86400,'s')
 cfg.end_time=model.run_stop - np.timedelta64(3600,'s')
 
 #cfg.run_dir="ptm_20000" # all sources, 3 behaviors, 24 hours
-cfg.run_dir="ebmud_2months"
+# cfg.run_dir='ebmud_all_w' # actually ebda, and the full slate of w_s, for june 2017.
+cfg.run_dir="napa_select_w"
 
 # add releases
 
@@ -130,12 +173,37 @@ for Npoint in range(len(model.bc_ds.Npoint)):
     ]
     cfg.releases.append(pnt_release)
 
-behaviors=['up20000','down20000','none']
 
+# full menu:
+enable_sources=[
+    'SacRiver',
+    'SJRiver',
+    'COYOTE', 
+    'SCLARAVCc', 
+    'UALAMEDA', 
+    'NAPA', 
+    'sunnyvale', 
+    'san_jose', 
+    'palo_alto', 
+    'lg', 
+    'sonoma_valley', 
+    'petaluma', 
+    'cccsd', 
+    'fs', 
+    'ddsd',
+    'src000', # EBDA
+    'src001', # EBMUD
+    'src002'  # SFPUC
+]
+
+enable_sources=['NAPA']
+    
 # For each of the flow inputs, add up, down, neutral
-for seg_idx in range(len(model.bc_ds.Nseg)):
-    flow_name=model.bc_ds.seg_name.values[seg_idx]
-    for behavior in behaviors:
+for behavior in cfg.behavior_names:
+    for seg_idx in range(len(model.bc_ds.Nseg)):
+        flow_name=model.bc_ds.seg_name.values[seg_idx]
+        if (enable_sources is not None) and (flow_name not in enable_sources):
+            continue
         group=["""\
      GROUP = '{flow_name}_{behavior}'
      RELEASE_DISTRIBUTION_SET = '{flow_name}'
@@ -147,11 +215,12 @@ for seg_idx in range(len(model.bc_ds.Nseg)):
         """.format(flow_name=flow_name,behavior=behavior)]
         cfg.groups.append(group)
 
-# And for each point input:
-for Npoint in range(len(model.bc_ds.Npoint)):
-    name="src%03d"%Npoint
+    # And for each point input:
+    for Npoint in range(len(model.bc_ds.Npoint)):
+        point_name="src%03d"%Npoint
+        if (enable_sources is not None) and (point_name not in enable_sources):
+            continue
 
-    for behavior in behaviors:
         group=["""\
      GROUP = '{point_name}_{behavior}'
      RELEASE_DISTRIBUTION_SET = '{point_name}'
@@ -160,7 +229,7 @@ for Npoint in range(len(model.bc_ds.Npoint)):
      BEHAVIOR_SET = '{behavior}'
      OUTPUT_SET = '30min_output'
      OUTPUT_FILE_BASE = '{point_name}_{behavior}'
-        """.format(point_name="src%03d"%Npoint,
+        """.format(point_name=point_name,
                    behavior=behavior)]
         cfg.groups.append(group)
         
