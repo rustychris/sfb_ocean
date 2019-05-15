@@ -30,6 +30,10 @@ def blended_dataset(period_start,period_stop):
         else:
             ds.close()
     blended_ds=xr.concat(hits,dim='time')
+    # in one case there is a duplicate at the end of one file and start
+    # of another.
+    monotone=np.r_[True, blended_ds.time.values[1:]>blended_ds.time.values[:-1]]
+    blended_ds=blended_ds.isel(time=monotone)
     return blended_ds
 
 def add_wind_preblended(model,cache_dir,pad=np.timedelta64(3*3600,'s')):

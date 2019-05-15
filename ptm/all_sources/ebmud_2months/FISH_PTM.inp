@@ -1,0 +1,945 @@
+GLOBAL INFORMATION
+   END_TIME = '2017-07-20 00:00:00'
+   RESTART_DIR = 'none'
+   TIME_STEP_SECONDS = 180.
+ 
+   -- deactivation logicals ---
+   REACHED_OPEN_BOUNDARY = 'true'
+   REACHED_FLOW_BOUNDARY = 'true'
+   ENTRAINED_BY_VOLUME_SINK = 'false'
+   CROSSED_LINE = 'false'
+   DEPOSITED_ON_BED = 'false'
+   CONSOLIDATED_ON_BED = 'false'
+ 
+   -- kill logicals ---
+   REACHED_OPEN_BOUNDARY = 'true'
+   REACHED_FLOW_BOUNDARY = 'true'
+   ENTRAINED_BY_VOLUME_SINK = 'false'
+   CROSSED_LINE = 'false'
+   DEPOSITED_ON_BED = 'false'
+   CONSOLIDATED_ON_BED = 'false'
+ 
+   -- line information --- 
+   NLINES = 0
+        
+TRANSECT INFORMATION -- applies to tidal surfing
+   NTRANSECTS = 0
+
+REGION INFORMATION
+   NREGIONS = 0
+RELEASE DISTRIBUTION INFORMATION
+   NRELEASE_DISTRIBUTION_SETS = 18
+
+   -- release distribution set 0 ---
+   RELEASE_DISTRIBUTION_SET = 'SacRiver' 
+   MIN_BED_ELEVATION_METERS = -99.
+   MAX_BED_ELEVATION_METERS =  99. 
+   HORIZONTAL_DISTRIBUTION = 'side'
+   SIDE_IDENTIFICATION_METHOD = 'list'
+   NSIDES = 5
+   XCENTER = 608595.286193
+   YCENTER = 4215460.961018
+   XCENTER = 608933.741852
+   YCENTER = 4214855.108421
+   XCENTER = 608682.568795
+   YCENTER = 4215312.883904
+   XCENTER = 608853.442424
+   YCENTER = 4215009.195323
+   XCENTER = 608768.508685
+   YCENTER = 4215162.918648
+   NPARTICLE_ASSIGNMENT = 'flow'
+   DENSITY_SPECIFICATION_METHOD = 'constant'
+   PARTICLE_DENSITY = 0.0001
+   PARTICLE_DISTRIBUTION = 'random'
+   ZMIN_NON_DIM = 0.0
+   ZMAX_NON_DIM = 1.0
+    VERT_SPACING = 'uniform'
+   -- release distribution set 1 ---
+   RELEASE_DISTRIBUTION_SET = 'SJRiver' 
+   MIN_BED_ELEVATION_METERS = -99.
+   MAX_BED_ELEVATION_METERS =  99. 
+   HORIZONTAL_DISTRIBUTION = 'side'
+   SIDE_IDENTIFICATION_METHOD = 'list'
+   NSIDES = 5
+   XCENTER = 609658.929951
+   YCENTER = 4209564.514133
+   XCENTER = 609674.582175
+   YCENTER = 4209332.506198
+   XCENTER = 609652.747973
+   YCENTER = 4209772.573732
+   XCENTER = 609694.878935
+   YCENTER = 4209102.258766
+   XCENTER = 609712.097878
+   YCENTER = 4208852.949900
+   NPARTICLE_ASSIGNMENT = 'flow'
+   DENSITY_SPECIFICATION_METHOD = 'constant'
+   PARTICLE_DENSITY = 0.0001
+   PARTICLE_DISTRIBUTION = 'random'
+   ZMIN_NON_DIM = 0.0
+   ZMAX_NON_DIM = 1.0
+    VERT_SPACING = 'uniform'
+   -- release distribution set 2 ---
+   RELEASE_DISTRIBUTION_SET = 'COYOTE' 
+   MIN_BED_ELEVATION_METERS = -99.
+   MAX_BED_ELEVATION_METERS =  99. 
+   HORIZONTAL_DISTRIBUTION = 'side'
+   SIDE_IDENTIFICATION_METHOD = 'list'
+   NSIDES = 3
+   XCENTER = 592983.732023
+   YCENTER = 4146661.056850
+   XCENTER = 592990.868365
+   YCENTER = 4146605.827981
+   XCENTER = 592987.348096
+   YCENTER = 4146634.050573
+   NPARTICLE_ASSIGNMENT = 'flow'
+   DENSITY_SPECIFICATION_METHOD = 'constant'
+   PARTICLE_DENSITY = 0.25
+   PARTICLE_DISTRIBUTION = 'random'
+   ZMIN_NON_DIM = 0.0
+   ZMAX_NON_DIM = 1.0
+    VERT_SPACING = 'uniform'
+   -- release distribution set 3 ---
+   RELEASE_DISTRIBUTION_SET = 'SCLARAVCc' 
+   MIN_BED_ELEVATION_METERS = -99.
+   MAX_BED_ELEVATION_METERS =  99. 
+   HORIZONTAL_DISTRIBUTION = 'side'
+   SIDE_IDENTIFICATION_METHOD = 'list'
+   NSIDES = 4
+   XCENTER = 591820.120387
+   YCENTER = 4141116.818696
+   XCENTER = 591765.762670
+   YCENTER = 4141076.702932
+   XCENTER = 591801.456585
+   YCENTER = 4141103.160832
+   XCENTER = 591783.402285
+   YCENTER = 4141089.867049
+   NPARTICLE_ASSIGNMENT = 'flow'
+   DENSITY_SPECIFICATION_METHOD = 'constant'
+   PARTICLE_DENSITY = 0.12
+   PARTICLE_DISTRIBUTION = 'random'
+   ZMIN_NON_DIM = 0.0
+   ZMAX_NON_DIM = 1.0
+    VERT_SPACING = 'uniform'
+   -- release distribution set 4 ---
+   RELEASE_DISTRIBUTION_SET = 'UALAMEDA' 
+   MIN_BED_ELEVATION_METERS = -99.
+   MAX_BED_ELEVATION_METERS =  99. 
+   HORIZONTAL_DISTRIBUTION = 'side'
+   SIDE_IDENTIFICATION_METHOD = 'list'
+   NSIDES = 3
+   XCENTER = 580338.298086
+   YCENTER = 4157698.477266
+   XCENTER = 580325.579197
+   YCENTER = 4157658.737524
+   XCENTER = 580311.976761
+   YCENTER = 4157616.212207
+   NPARTICLE_ASSIGNMENT = 'flow'
+   DENSITY_SPECIFICATION_METHOD = 'constant'
+   PARTICLE_DENSITY = 1.0
+   PARTICLE_DISTRIBUTION = 'random'
+   ZMIN_NON_DIM = 0.0
+   ZMAX_NON_DIM = 1.0
+    VERT_SPACING = 'uniform'
+   -- release distribution set 5 ---
+   RELEASE_DISTRIBUTION_SET = 'NAPA' 
+   MIN_BED_ELEVATION_METERS = -99.
+   MAX_BED_ELEVATION_METERS =  99. 
+   HORIZONTAL_DISTRIBUTION = 'side'
+   SIDE_IDENTIFICATION_METHOD = 'list'
+   NSIDES = 3
+   XCENTER = 560176.974911
+   YCENTER = 4227460.235323
+   XCENTER = 560063.458790
+   YCENTER = 4227434.649635
+   XCENTER = 559948.483879
+   YCENTER = 4227412.914312
+   NPARTICLE_ASSIGNMENT = 'flow'
+   DENSITY_SPECIFICATION_METHOD = 'constant'
+   PARTICLE_DENSITY = 0.17
+   PARTICLE_DISTRIBUTION = 'random'
+   ZMIN_NON_DIM = 0.0
+   ZMAX_NON_DIM = 1.0
+    VERT_SPACING = 'uniform'
+   -- release distribution set 6 ---
+   RELEASE_DISTRIBUTION_SET = 'sunnyvale' 
+   MIN_BED_ELEVATION_METERS = -99.
+   MAX_BED_ELEVATION_METERS =  99. 
+   HORIZONTAL_DISTRIBUTION = 'side'
+   SIDE_IDENTIFICATION_METHOD = 'list'
+   NSIDES = 1
+   XCENTER = 587092.994123
+   YCENTER = 4142011.283829
+   NPARTICLE_ASSIGNMENT = 'flow'
+   DENSITY_SPECIFICATION_METHOD = 'constant'
+   PARTICLE_DENSITY = 0.38
+   PARTICLE_DISTRIBUTION = 'random'
+   ZMIN_NON_DIM = 0.0
+   ZMAX_NON_DIM = 1.0
+    VERT_SPACING = 'uniform'
+   -- release distribution set 7 ---
+   RELEASE_DISTRIBUTION_SET = 'san_jose' 
+   MIN_BED_ELEVATION_METERS = -99.
+   MAX_BED_ELEVATION_METERS =  99. 
+   HORIZONTAL_DISTRIBUTION = 'side'
+   SIDE_IDENTIFICATION_METHOD = 'list'
+   NSIDES = 3
+   XCENTER = 592378.976652
+   YCENTER = 4143831.234674
+   XCENTER = 592334.880161
+   YCENTER = 4143808.571985
+   XCENTER = 592357.622320
+   YCENTER = 4143819.885534
+   NPARTICLE_ASSIGNMENT = 'flow'
+   DENSITY_SPECIFICATION_METHOD = 'constant'
+   PARTICLE_DENSITY = 0.04
+   PARTICLE_DISTRIBUTION = 'random'
+   ZMIN_NON_DIM = 0.0
+   ZMAX_NON_DIM = 1.0
+    VERT_SPACING = 'uniform'
+   -- release distribution set 8 ---
+   RELEASE_DISTRIBUTION_SET = 'palo_alto' 
+   MIN_BED_ELEVATION_METERS = -99.
+   MAX_BED_ELEVATION_METERS =  99. 
+   HORIZONTAL_DISTRIBUTION = 'side'
+   SIDE_IDENTIFICATION_METHOD = 'list'
+   NSIDES = 2
+   XCENTER = 578493.366013
+   YCENTER = 4146616.211909
+   XCENTER = 578591.242848
+   YCENTER = 4146611.252139
+   NPARTICLE_ASSIGNMENT = 'flow'
+   DENSITY_SPECIFICATION_METHOD = 'constant'
+   PARTICLE_DENSITY = 0.17
+   PARTICLE_DISTRIBUTION = 'random'
+   ZMIN_NON_DIM = 0.0
+   ZMAX_NON_DIM = 1.0
+    VERT_SPACING = 'uniform'
+   -- release distribution set 9 ---
+   RELEASE_DISTRIBUTION_SET = 'lg' 
+   MIN_BED_ELEVATION_METERS = -99.
+   MAX_BED_ELEVATION_METERS =  99. 
+   HORIZONTAL_DISTRIBUTION = 'side'
+   SIDE_IDENTIFICATION_METHOD = 'list'
+   NSIDES = 1
+   XCENTER = 543082.518295
+   YCENTER = 4210005.819506
+   NPARTICLE_ASSIGNMENT = 'flow'
+   DENSITY_SPECIFICATION_METHOD = 'constant'
+   PARTICLE_DENSITY = 1.0
+   PARTICLE_DISTRIBUTION = 'random'
+   ZMIN_NON_DIM = 0.0
+   ZMAX_NON_DIM = 1.0
+    VERT_SPACING = 'uniform'
+   -- release distribution set 10 ---
+   RELEASE_DISTRIBUTION_SET = 'sonoma_valley' 
+   MIN_BED_ELEVATION_METERS = -99.
+   MAX_BED_ELEVATION_METERS =  99. 
+   HORIZONTAL_DISTRIBUTION = 'side'
+   SIDE_IDENTIFICATION_METHOD = 'list'
+   NSIDES = 1
+   XCENTER = 550114.160385
+   YCENTER = 4230030.814670
+   NPARTICLE_ASSIGNMENT = 'flow'
+   DENSITY_SPECIFICATION_METHOD = 'constant'
+   PARTICLE_DENSITY = 1.0
+   PARTICLE_DISTRIBUTION = 'random'
+   ZMIN_NON_DIM = 0.0
+   ZMAX_NON_DIM = 1.0
+    VERT_SPACING = 'uniform'
+   -- release distribution set 11 ---
+   RELEASE_DISTRIBUTION_SET = 'petaluma' 
+   MIN_BED_ELEVATION_METERS = -99.
+   MAX_BED_ELEVATION_METERS =  99. 
+   HORIZONTAL_DISTRIBUTION = 'side'
+   SIDE_IDENTIFICATION_METHOD = 'list'
+   NSIDES = 1
+   XCENTER = 536720.856790
+   YCENTER = 4229020.323113
+   NPARTICLE_ASSIGNMENT = 'flow'
+   DENSITY_SPECIFICATION_METHOD = 'constant'
+   PARTICLE_DENSITY = 1.0
+   PARTICLE_DISTRIBUTION = 'random'
+   ZMIN_NON_DIM = 0.0
+   ZMAX_NON_DIM = 1.0
+    VERT_SPACING = 'uniform'
+   -- release distribution set 12 ---
+   RELEASE_DISTRIBUTION_SET = 'cccsd' 
+   MIN_BED_ELEVATION_METERS = -99.
+   MAX_BED_ELEVATION_METERS =  99. 
+   HORIZONTAL_DISTRIBUTION = 'side'
+   SIDE_IDENTIFICATION_METHOD = 'list'
+   NSIDES = 1
+   XCENTER = 578960.249153
+   YCENTER = 4210968.499435
+   NPARTICLE_ASSIGNMENT = 'flow'
+   DENSITY_SPECIFICATION_METHOD = 'constant'
+   PARTICLE_DENSITY = 0.1
+   PARTICLE_DISTRIBUTION = 'random'
+   ZMIN_NON_DIM = 0.0
+   ZMAX_NON_DIM = 1.0
+    VERT_SPACING = 'uniform'
+   -- release distribution set 13 ---
+   RELEASE_DISTRIBUTION_SET = 'fs' 
+   MIN_BED_ELEVATION_METERS = -99.
+   MAX_BED_ELEVATION_METERS =  99. 
+   HORIZONTAL_DISTRIBUTION = 'side'
+   SIDE_IDENTIFICATION_METHOD = 'list'
+   NSIDES = 1
+   XCENTER = 583887.230074
+   YCENTER = 4228995.457990
+   NPARTICLE_ASSIGNMENT = 'flow'
+   DENSITY_SPECIFICATION_METHOD = 'constant'
+   PARTICLE_DENSITY = 0.33
+   PARTICLE_DISTRIBUTION = 'random'
+   ZMIN_NON_DIM = 0.0
+   ZMAX_NON_DIM = 1.0
+    VERT_SPACING = 'uniform'
+   -- release distribution set 14 ---
+   RELEASE_DISTRIBUTION_SET = 'ddsd' 
+   MIN_BED_ELEVATION_METERS = -99.
+   MAX_BED_ELEVATION_METERS =  99. 
+   HORIZONTAL_DISTRIBUTION = 'side'
+   SIDE_IDENTIFICATION_METHOD = 'list'
+   NSIDES = 1
+   XCENTER = 602016.976974
+   YCENTER = 4209237.683700
+   NPARTICLE_ASSIGNMENT = 'flow'
+   DENSITY_SPECIFICATION_METHOD = 'constant'
+   PARTICLE_DENSITY = 0.5
+   PARTICLE_DISTRIBUTION = 'random'
+   ZMIN_NON_DIM = 0.0
+   ZMAX_NON_DIM = 1.0
+    VERT_SPACING = 'uniform'
+   -- release distribution set 15 ---
+         RELEASE_DISTRIBUTION_SET = 'src000' 
+         MIN_BED_ELEVATION_METERS = -99.
+         MAX_BED_ELEVATION_METERS =  99. 
+         HORIZONTAL_DISTRIBUTION = 'line'
+            XSTART = 562203.64198
+            YSTART = 4172099.62381
+            XEND   = 562203.64198
+            YEND   = 4172099.62381
+            NPARTICLE_ASSIGNMENT = 'specify'
+              TIME_VARIABLE_RELEASE = 'false'
+              NPARTICLES_PER_RELEASE_INTERVAL = 20
+              -- average number of particles per water column
+              AVERAGE_NPARTICLES_IN_VERTICAL = 10
+              -- method of setting the number of particles released in water column
+              DISTRIBUTION_AMONG_WATER_COLUMNS = 'uniform'
+         ZMIN_NON_DIM = 0.0
+         ZMAX_NON_DIM = 0.05
+         VERT_SPACING = 'uniform'
+
+   -- release distribution set 16 ---
+         RELEASE_DISTRIBUTION_SET = 'src001' 
+         MIN_BED_ELEVATION_METERS = -99.
+         MAX_BED_ELEVATION_METERS =  99. 
+         HORIZONTAL_DISTRIBUTION = 'line'
+            XSTART = 557186.94336
+            YSTART = 4185631.83930
+            XEND   = 557186.94336
+            YEND   = 4185631.83930
+            NPARTICLE_ASSIGNMENT = 'specify'
+              TIME_VARIABLE_RELEASE = 'false'
+              NPARTICLES_PER_RELEASE_INTERVAL = 20
+              -- average number of particles per water column
+              AVERAGE_NPARTICLES_IN_VERTICAL = 10
+              -- method of setting the number of particles released in water column
+              DISTRIBUTION_AMONG_WATER_COLUMNS = 'uniform'
+         ZMIN_NON_DIM = 0.0
+         ZMAX_NON_DIM = 0.05
+         VERT_SPACING = 'uniform'
+
+   -- release distribution set 17 ---
+         RELEASE_DISTRIBUTION_SET = 'src002' 
+         MIN_BED_ELEVATION_METERS = -99.
+         MAX_BED_ELEVATION_METERS =  99. 
+         HORIZONTAL_DISTRIBUTION = 'line'
+            XSTART = 555253.19027
+            YSTART = 4178290.28158
+            XEND   = 555253.19027
+            YEND   = 4178290.28158
+            NPARTICLE_ASSIGNMENT = 'specify'
+              TIME_VARIABLE_RELEASE = 'false'
+              NPARTICLES_PER_RELEASE_INTERVAL = 20
+              -- average number of particles per water column
+              AVERAGE_NPARTICLES_IN_VERTICAL = 10
+              -- method of setting the number of particles released in water column
+              DISTRIBUTION_AMONG_WATER_COLUMNS = 'uniform'
+         ZMIN_NON_DIM = 0.0
+         ZMAX_NON_DIM = 0.05
+         VERT_SPACING = 'uniform'
+
+RELEASE TIMING INFORMATION
+   NRELEASE_TIMING_SETS = 3
+   -- release timing set 1 ---        
+     RELEASE_TIMING_SET = 'once'
+     INITIAL_RELEASE_TIME = '2017-06-01 01:00:00'
+     RELEASE_TIMING = 'single'
+     INACTIVATION_TIME = 'none'
+   -- release timing set 2 ---        
+     RELEASE_TIMING_SET = 'flowbased'
+     INITIAL_RELEASE_TIME = '2017-06-01 01:00:00'
+     RELEASE_TIMING = 'interval'
+          NINTERVALS = 1000000
+          RELEASE_INTERVAL_HOURS = 1.0
+          INACTIVATION_TIME = 'none'
+   -- release timing set 3 ---        
+     RELEASE_TIMING_SET = 'interval'
+     INITIAL_RELEASE_TIME = '2017-06-01 01:00:00'
+     RELEASE_TIMING = 'interval'
+       NINTERVALS = 100000
+       RELEASE_INTERVAL_HOURS = 1.0
+     INACTIVATION_TIME = 'none'
+BEHAVIOR INFORMATION
+   NBEHAVIOR_PROFILES = 0
+   NBEHAVIORS = 2
+
+   -- behavior 1 ---
+     BEHAVIOR_SET = 'down20000'
+     BEHAVIOR_DIMENSION = 'vertical'
+     BEHAVIOR_TYPE = 'specified'
+     BEHAVIOR_FILENAME = 'down_20000.inp'
+  
+   -- behavior 2 ---
+     BEHAVIOR_SET = 'up20000'
+     BEHAVIOR_DIMENSION = 'vertical'
+     BEHAVIOR_TYPE = 'specified'
+     BEHAVIOR_FILENAME = 'up_20000.inp'
+
+
+OUTPUT INFORMATION 
+   NOUTPUT_SETS = 3
+
+   -- output set 1 ---  for debugging
+   OUTPUT_SET = '6min_output'
+   FLAG_LOG_LOGICAL = 'true'
+   BINARY_OUTPUT_INTERVAL_HOURS = 0.10
+   ASCII_OUTPUT_INTERVAL_HOURS = 'none' 
+   HISTOGRAM_OUTPUT_INTERVAL_HOURS = 'none'
+   STATISTICS_OUTPUT_INTERVAL_HOURS = 0.50
+   CONCENTRATION_OUTPUT_INTERVAL_HOURS = 1.00
+   REGION_COUNT_OUTPUT_INTERVAL_HOURS = 0.50
+   REGION_COUNT_UPDATE_INTERVAL_HOURS = 0.50
+   STATE_OUTPUT_INTERVAL_HOURS = 0.10
+   NUMBER_OF_VARIABLES_OUTPUT = 6
+     VARIABLE_OUTPUT = 'velocity'
+     VARIABLE_OUTPUT = 'salinity'
+     VARIABLE_OUTPUT = 'layer'
+     VARIABLE_OUTPUT = 'water_depth'
+     VARIABLE_OUTPUT = 'water_level'
+     VARIABLE_OUTPUT = 'bed_elevation'
+
+     NODATA_VALUE = -999.0
+
+   -- output set 2 --- for short time scales
+   OUTPUT_SET = '15min_output'
+   FLAG_LOG_LOGICAL = 'true'
+   BINARY_OUTPUT_INTERVAL_HOURS = 0.25
+   ASCII_OUTPUT_INTERVAL_HOURS = 'none' 
+   HISTOGRAM_OUTPUT_INTERVAL_HOURS = 'none'
+   STATISTICS_OUTPUT_INTERVAL_HOURS = 0.50
+   CONCENTRATION_OUTPUT_INTERVAL_HOURS = 1.00
+   REGION_COUNT_OUTPUT_INTERVAL_HOURS = 0.50
+   REGION_COUNT_UPDATE_INTERVAL_HOURS = 0.50
+   STATE_OUTPUT_INTERVAL_HOURS = 'none'
+
+   -- output set 3 --- close to production
+   OUTPUT_SET = '30min_output'
+   FLAG_LOG_LOGICAL = 'true'
+   BINARY_OUTPUT_INTERVAL_HOURS = 0.5
+   ASCII_OUTPUT_INTERVAL_HOURS = 'none' 
+   HISTOGRAM_OUTPUT_INTERVAL_HOURS = 'none'
+   STATISTICS_OUTPUT_INTERVAL_HOURS = 24
+   CONCENTRATION_OUTPUT_INTERVAL_HOURS = 24.0
+   REGION_COUNT_OUTPUT_INTERVAL_HOURS = 24.
+   REGION_COUNT_UPDATE_INTERVAL_HOURS = 24.
+   STATE_OUTPUT_INTERVAL_HOURS = 'none'
+
+
+PARTICLE GROUP INFORMATION 
+   NGROUPS = 2
+
+   -- --- group 0 ---
+   --   GROUP = 'SacRiver_up20000'
+   --   RELEASE_DISTRIBUTION_SET = 'SacRiver'
+   --   RELEASE_TIMING_SET = 'flowbased'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'up20000'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'SacRiver_up20000'
+   --      
+   -- --- group 1 ---
+   --   GROUP = 'SacRiver_down20000'
+   --   RELEASE_DISTRIBUTION_SET = 'SacRiver'
+   --   RELEASE_TIMING_SET = 'flowbased'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'down20000'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'SacRiver_down20000'
+   --      
+   -- --- group 2 ---
+   --   GROUP = 'SacRiver_none'
+   --   RELEASE_DISTRIBUTION_SET = 'SacRiver'
+   --   RELEASE_TIMING_SET = 'flowbased'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'none'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'SacRiver_none'
+   --      
+   -- --- group 3 ---
+   --   GROUP = 'SJRiver_up20000'
+   --   RELEASE_DISTRIBUTION_SET = 'SJRiver'
+   --   RELEASE_TIMING_SET = 'flowbased'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'up20000'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'SJRiver_up20000'
+   --      
+   -- --- group 4 ---
+   --   GROUP = 'SJRiver_down20000'
+   --   RELEASE_DISTRIBUTION_SET = 'SJRiver'
+   --   RELEASE_TIMING_SET = 'flowbased'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'down20000'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'SJRiver_down20000'
+   --      
+   -- --- group 5 ---
+   --   GROUP = 'SJRiver_none'
+   --   RELEASE_DISTRIBUTION_SET = 'SJRiver'
+   --   RELEASE_TIMING_SET = 'flowbased'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'none'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'SJRiver_none'
+   --      
+   -- --- group 6 ---
+   --   GROUP = 'COYOTE_up20000'
+   --   RELEASE_DISTRIBUTION_SET = 'COYOTE'
+   --   RELEASE_TIMING_SET = 'flowbased'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'up20000'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'COYOTE_up20000'
+   --      
+   -- --- group 7 ---
+   --   GROUP = 'COYOTE_down20000'
+   --   RELEASE_DISTRIBUTION_SET = 'COYOTE'
+   --   RELEASE_TIMING_SET = 'flowbased'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'down20000'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'COYOTE_down20000'
+   --      
+   -- --- group 8 ---
+   --   GROUP = 'COYOTE_none'
+   --   RELEASE_DISTRIBUTION_SET = 'COYOTE'
+   --   RELEASE_TIMING_SET = 'flowbased'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'none'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'COYOTE_none'
+   --      
+   -- --- group 9 ---
+   --   GROUP = 'SCLARAVCc_up20000'
+   --   RELEASE_DISTRIBUTION_SET = 'SCLARAVCc'
+   --   RELEASE_TIMING_SET = 'flowbased'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'up20000'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'SCLARAVCc_up20000'
+   --      
+   -- --- group 10 ---
+   --   GROUP = 'SCLARAVCc_down20000'
+   --   RELEASE_DISTRIBUTION_SET = 'SCLARAVCc'
+   --   RELEASE_TIMING_SET = 'flowbased'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'down20000'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'SCLARAVCc_down20000'
+   --      
+   -- --- group 11 ---
+   --   GROUP = 'SCLARAVCc_none'
+   --   RELEASE_DISTRIBUTION_SET = 'SCLARAVCc'
+   --   RELEASE_TIMING_SET = 'flowbased'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'none'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'SCLARAVCc_none'
+   --      
+   -- --- group 12 ---
+   --   GROUP = 'UALAMEDA_up20000'
+   --   RELEASE_DISTRIBUTION_SET = 'UALAMEDA'
+   --   RELEASE_TIMING_SET = 'flowbased'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'up20000'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'UALAMEDA_up20000'
+   --      
+   -- --- group 13 ---
+   --   GROUP = 'UALAMEDA_down20000'
+   --   RELEASE_DISTRIBUTION_SET = 'UALAMEDA'
+   --   RELEASE_TIMING_SET = 'flowbased'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'down20000'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'UALAMEDA_down20000'
+   --      
+   -- --- group 14 ---
+   --   GROUP = 'UALAMEDA_none'
+   --   RELEASE_DISTRIBUTION_SET = 'UALAMEDA'
+   --   RELEASE_TIMING_SET = 'flowbased'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'none'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'UALAMEDA_none'
+   --      
+   -- --- group 15 ---
+   --   GROUP = 'NAPA_up20000'
+   --   RELEASE_DISTRIBUTION_SET = 'NAPA'
+   --   RELEASE_TIMING_SET = 'flowbased'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'up20000'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'NAPA_up20000'
+   --      
+   -- --- group 16 ---
+   --   GROUP = 'NAPA_down20000'
+   --   RELEASE_DISTRIBUTION_SET = 'NAPA'
+   --   RELEASE_TIMING_SET = 'flowbased'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'down20000'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'NAPA_down20000'
+   --      
+   -- --- group 17 ---
+   --   GROUP = 'NAPA_none'
+   --   RELEASE_DISTRIBUTION_SET = 'NAPA'
+   --   RELEASE_TIMING_SET = 'flowbased'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'none'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'NAPA_none'
+   --      
+   -- --- group 18 ---
+   --   GROUP = 'sunnyvale_up20000'
+   --   RELEASE_DISTRIBUTION_SET = 'sunnyvale'
+   --   RELEASE_TIMING_SET = 'flowbased'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'up20000'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'sunnyvale_up20000'
+   --      
+   -- --- group 19 ---
+   --   GROUP = 'sunnyvale_down20000'
+   --   RELEASE_DISTRIBUTION_SET = 'sunnyvale'
+   --   RELEASE_TIMING_SET = 'flowbased'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'down20000'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'sunnyvale_down20000'
+   --      
+   -- --- group 20 ---
+   --   GROUP = 'sunnyvale_none'
+   --   RELEASE_DISTRIBUTION_SET = 'sunnyvale'
+   --   RELEASE_TIMING_SET = 'flowbased'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'none'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'sunnyvale_none'
+   --      
+   -- --- group 21 ---
+   --   GROUP = 'san_jose_up20000'
+   --   RELEASE_DISTRIBUTION_SET = 'san_jose'
+   --   RELEASE_TIMING_SET = 'flowbased'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'up20000'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'san_jose_up20000'
+   --      
+   -- --- group 22 ---
+   --   GROUP = 'san_jose_down20000'
+   --   RELEASE_DISTRIBUTION_SET = 'san_jose'
+   --   RELEASE_TIMING_SET = 'flowbased'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'down20000'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'san_jose_down20000'
+   --      
+   -- --- group 23 ---
+   --   GROUP = 'san_jose_none'
+   --   RELEASE_DISTRIBUTION_SET = 'san_jose'
+   --   RELEASE_TIMING_SET = 'flowbased'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'none'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'san_jose_none'
+   --      
+   -- --- group 24 ---
+   --   GROUP = 'palo_alto_up20000'
+   --   RELEASE_DISTRIBUTION_SET = 'palo_alto'
+   --   RELEASE_TIMING_SET = 'flowbased'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'up20000'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'palo_alto_up20000'
+   --      
+   -- --- group 25 ---
+   --   GROUP = 'palo_alto_down20000'
+   --   RELEASE_DISTRIBUTION_SET = 'palo_alto'
+   --   RELEASE_TIMING_SET = 'flowbased'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'down20000'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'palo_alto_down20000'
+   --      
+   -- --- group 26 ---
+   --   GROUP = 'palo_alto_none'
+   --   RELEASE_DISTRIBUTION_SET = 'palo_alto'
+   --   RELEASE_TIMING_SET = 'flowbased'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'none'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'palo_alto_none'
+   --      
+   -- --- group 27 ---
+   --   GROUP = 'lg_up20000'
+   --   RELEASE_DISTRIBUTION_SET = 'lg'
+   --   RELEASE_TIMING_SET = 'flowbased'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'up20000'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'lg_up20000'
+   --      
+   -- --- group 28 ---
+   --   GROUP = 'lg_down20000'
+   --   RELEASE_DISTRIBUTION_SET = 'lg'
+   --   RELEASE_TIMING_SET = 'flowbased'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'down20000'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'lg_down20000'
+   --      
+   -- --- group 29 ---
+   --   GROUP = 'lg_none'
+   --   RELEASE_DISTRIBUTION_SET = 'lg'
+   --   RELEASE_TIMING_SET = 'flowbased'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'none'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'lg_none'
+   --      
+   -- --- group 30 ---
+   --   GROUP = 'sonoma_valley_up20000'
+   --   RELEASE_DISTRIBUTION_SET = 'sonoma_valley'
+   --   RELEASE_TIMING_SET = 'flowbased'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'up20000'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'sonoma_valley_up20000'
+   --      
+   -- --- group 31 ---
+   --   GROUP = 'sonoma_valley_down20000'
+   --   RELEASE_DISTRIBUTION_SET = 'sonoma_valley'
+   --   RELEASE_TIMING_SET = 'flowbased'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'down20000'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'sonoma_valley_down20000'
+   --      
+   -- --- group 32 ---
+   --   GROUP = 'sonoma_valley_none'
+   --   RELEASE_DISTRIBUTION_SET = 'sonoma_valley'
+   --   RELEASE_TIMING_SET = 'flowbased'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'none'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'sonoma_valley_none'
+   --      
+   -- --- group 33 ---
+   --   GROUP = 'petaluma_up20000'
+   --   RELEASE_DISTRIBUTION_SET = 'petaluma'
+   --   RELEASE_TIMING_SET = 'flowbased'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'up20000'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'petaluma_up20000'
+   --      
+   -- --- group 34 ---
+   --   GROUP = 'petaluma_down20000'
+   --   RELEASE_DISTRIBUTION_SET = 'petaluma'
+   --   RELEASE_TIMING_SET = 'flowbased'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'down20000'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'petaluma_down20000'
+   --      
+   -- --- group 35 ---
+   --   GROUP = 'petaluma_none'
+   --   RELEASE_DISTRIBUTION_SET = 'petaluma'
+   --   RELEASE_TIMING_SET = 'flowbased'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'none'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'petaluma_none'
+   --      
+   -- --- group 36 ---
+   --   GROUP = 'cccsd_up20000'
+   --   RELEASE_DISTRIBUTION_SET = 'cccsd'
+   --   RELEASE_TIMING_SET = 'flowbased'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'up20000'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'cccsd_up20000'
+   --      
+   -- --- group 37 ---
+   --   GROUP = 'cccsd_down20000'
+   --   RELEASE_DISTRIBUTION_SET = 'cccsd'
+   --   RELEASE_TIMING_SET = 'flowbased'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'down20000'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'cccsd_down20000'
+   --      
+   -- --- group 38 ---
+   --   GROUP = 'cccsd_none'
+   --   RELEASE_DISTRIBUTION_SET = 'cccsd'
+   --   RELEASE_TIMING_SET = 'flowbased'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'none'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'cccsd_none'
+   --      
+   -- --- group 39 ---
+   --   GROUP = 'fs_up20000'
+   --   RELEASE_DISTRIBUTION_SET = 'fs'
+   --   RELEASE_TIMING_SET = 'flowbased'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'up20000'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'fs_up20000'
+   --      
+   -- --- group 40 ---
+   --   GROUP = 'fs_down20000'
+   --   RELEASE_DISTRIBUTION_SET = 'fs'
+   --   RELEASE_TIMING_SET = 'flowbased'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'down20000'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'fs_down20000'
+   --      
+   -- --- group 41 ---
+   --   GROUP = 'fs_none'
+   --   RELEASE_DISTRIBUTION_SET = 'fs'
+   --   RELEASE_TIMING_SET = 'flowbased'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'none'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'fs_none'
+   --      
+   -- --- group 42 ---
+   --   GROUP = 'ddsd_up20000'
+   --   RELEASE_DISTRIBUTION_SET = 'ddsd'
+   --   RELEASE_TIMING_SET = 'flowbased'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'up20000'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'ddsd_up20000'
+   --      
+   -- --- group 43 ---
+   --   GROUP = 'ddsd_down20000'
+   --   RELEASE_DISTRIBUTION_SET = 'ddsd'
+   --   RELEASE_TIMING_SET = 'flowbased'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'down20000'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'ddsd_down20000'
+   --      
+   -- --- group 44 ---
+   --   GROUP = 'ddsd_none'
+   --   RELEASE_DISTRIBUTION_SET = 'ddsd'
+   --   RELEASE_TIMING_SET = 'flowbased'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'none'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'ddsd_none'
+   --      
+   -- --- group 45 ---
+   --   GROUP = 'src000_up20000'
+   --   RELEASE_DISTRIBUTION_SET = 'src000'
+   --   RELEASE_TIMING_SET = 'interval'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'up20000'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'src000_up20000'
+   --      
+   -- --- group 46 ---
+   --   GROUP = 'src000_down20000'
+   --   RELEASE_DISTRIBUTION_SET = 'src000'
+   --   RELEASE_TIMING_SET = 'interval'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'down20000'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'src000_down20000'
+   --      
+   -- --- group 47 ---
+   --   GROUP = 'src000_none'
+   --   RELEASE_DISTRIBUTION_SET = 'src000'
+   --   RELEASE_TIMING_SET = 'interval'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'none'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'src000_none'
+   
+     GROUP = 'src001_down20000'
+     RELEASE_DISTRIBUTION_SET = 'src001'
+     RELEASE_TIMING_SET = 'interval'
+     PARTICLE_TYPE = 'none'
+     BEHAVIOR_SET = 'down20000'
+     OUTPUT_SET = '30min_output'
+     OUTPUT_FILE_BASE = 'src001_down20000'
+     
+     -- GROUP = 'src001_none'
+     -- RELEASE_DISTRIBUTION_SET = 'src001'
+     -- RELEASE_TIMING_SET = 'interval'
+     -- PARTICLE_TYPE = 'none'
+     -- BEHAVIOR_SET = 'none'
+     -- OUTPUT_SET = '30min_output'
+     -- OUTPUT_FILE_BASE = 'src001_none'
+        
+     GROUP = 'src001_up20000'
+     RELEASE_DISTRIBUTION_SET = 'src001'
+     RELEASE_TIMING_SET = 'interval'
+     PARTICLE_TYPE = 'none'
+     BEHAVIOR_SET = 'up20000'
+     OUTPUT_SET = '30min_output'
+     OUTPUT_FILE_BASE = 'src001_up20000'
+        
+   -- --- group 51 ---
+   --   GROUP = 'src002_up20000'
+   --   RELEASE_DISTRIBUTION_SET = 'src002'
+   --   RELEASE_TIMING_SET = 'interval'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'up20000'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'src002_up20000'
+   --      
+   -- --- group 52 ---
+   --   GROUP = 'src002_down20000'
+   --   RELEASE_DISTRIBUTION_SET = 'src002'
+   --   RELEASE_TIMING_SET = 'interval'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'down20000'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'src002_down20000'
+   --      
+   -- --- group 53 ---
+   --   GROUP = 'src002_none'
+   --   RELEASE_DISTRIBUTION_SET = 'src002'
+   --   RELEASE_TIMING_SET = 'interval'
+   --   PARTICLE_TYPE = 'none'
+   --   BEHAVIOR_SET = 'none'
+   --   OUTPUT_SET = '30min_output'
+   --   OUTPUT_FILE_BASE = 'src002_none'
+        

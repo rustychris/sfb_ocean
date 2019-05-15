@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import xarray as xr
 from stompy import utils, filters
+from stompy.spatial import field
 
 import logging as log
 
@@ -42,6 +43,8 @@ parser.add_argument("-d", "--dir", help="Run directory",
                     default="runs/bay007")
 parser.add_argument("-r", "--resume", help="Resume from run",
                     default=None)
+parser.add_argument("-n", "--dryrun", help="Do not actually partition or run the simulation",
+                    action='store_true')
 parser.add_argument("--ocean",help="Set ocean forcing method",
                     default="velocity-hycom+otps")
 parser.add_argument("-g","--write-grid", help="Write grid to ugrid")
@@ -51,7 +54,10 @@ if __name__=='__main__':
 else:
     # For manually running the script.
     # args=parser.parse_args(["-g","grid-connectivity.nc"])
-    args=parser.parse_args(["-s","2017-06-05","-e","2017-06-10","-d","test"])
+    # args=parser.parse_args(["-s","2017-06-01","-e","2017-06-05","-d","test-met5-KtoC"])
+    args=parser.parse_args(["-r","/opt2/sfb_ocean/suntans/runs/merge_009-20170801/",
+                            "-e","2017-10-01T12:00:00",
+                            "-d","/opt2/sfb_ocean/suntans/runs/merge_009-20170901"])
     #raise Exception("Update args")
 
 ##
@@ -88,14 +94,14 @@ if not args.resume:
     # had been ramping at 86400, but don't linger so much...
     model.config['thetaramptime']=43200
     
-    model.config['ntout']=int(30*60/dt_secs) # 30 minutes
+    model.config['ntout']=int(30*60/dt_secs) # 30 minutes, but can delete it
+    model.config['ntaverage']=int(30*60/dt_secs) # 30 minutes
     model.config['ntoutStore']=int(86400/dt_secs) # daily
-    # 1 day while testing
-    model.config['nstepsperncfile']=int( 1*86400/(int(model.config['ntout'])*dt_secs) )
-    model.config['mergeArrays']=1
-    model.config['ntaverage']=model.config['ntout']
     model.config['calcaverage']=1
     model.config['averageNetcdfFile']="average.nc"
+    # 5 days per average file
+    model.config['nstepsperncfile']=int( 5*86400/(int(model.config['ntaverage'])*dt_secs) )
+    model.config['mergeArrays']=1
     
     model.config['rstretch']=1.12 # about 1.7m surface layer thickness
     model.config['Cmax']=30.0 # volumetric is a better test, this is more a backup.
@@ -143,7 +149,7 @@ model.projection="EPSG:26910"
 model.run_stop=np.datetime64(args.end)
 
 # run_dir='/opt/sfb_ocean/suntans/runs/merge_001-20170601'
-model.set_run_dir(args.dir,mode='pristine')
+model.set_run_dir(args.dir,mode='askclobber')
     
 model.add_gazetteer(os.path.join(grid_dir,"linear_features.shp"))
 model.add_gazetteer(os.path.join(grid_dir,"point_features.shp"))
@@ -228,6 +234,8 @@ six.moves.reload_module(coamps_sfei_wind)
 log.info("Adding WIND")
 coamps_sfei_wind.add_wind_preblended(model,cache_dir)
 
+assert (np.diff(model.met_ds.nt.values)/np.timedelta64(1,'s')).min() > 0
+
 ##
 
 # Air temp for met model
@@ -243,12 +251,12 @@ if 1:
     # likely has a lot of bleed from land into water.
 
     # land=1, sea=0
-    land_sea=field.GdalGrid('coamps_land_sea')
+    land_sea_raw=field.GdalGrid('coamps_land_sea')
+    # Reproject to UTM
+    land_sea=land_sea_raw.warp("EPSG:26910")
 
     coamps_temp.add_coamps_fields(model,cache_dir,
-                                  [('grnd_sea_temp','Tair'),
-                                   ('land_sea','landmask') #debugging
-                                  ],
+                                  [('grnd_sea_temp','Tair') ],
                                   mask_field=land_sea)
     model.met_ds.Tair.values[:] -= 273.15 # Kelvin to Celsius
     assert model.met_ds.Tair.values.min()>=0.0,"Maybe bad K->C conversion"
@@ -295,6 +303,8 @@ if __name__=='__main__':
         if args.resume is None:
             set_ic(model)
             model.write_ic_ds()
-        model.partition()
-        model.run_simulation()
+
+        if not args.dryrun:
+            model.partition()
+            model.run_simulation()
 

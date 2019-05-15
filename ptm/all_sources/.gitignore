@@ -1,0 +1,9 @@
+*.out
+*.txt
+*log
+*.prn
+*.idx
+FISH_PTM.grd_geom
+*.met
+fort.*
+

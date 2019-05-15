@@ -1,0 +1,11 @@
+ -- -0.06 m/s
+ -- NUMBER_OF_LAYERS = <integer>
+ -- DISTANCE_OPTION = {'depth', 'elevation' or 'height_above_bed'}
+ NLAYERS = 2
+ DISTANCE_OPTION = 'height_above_bed'
+                          LAYER_1         LAYER 2
+YYYY-MM-DD HH:MM:SS      DISTANCE SPEED  DISTANCE   SPEED
+1990-01-01 00:00:00        0.500   0.000   0.6      -0.060000
+1990-01-01 01:00:00        0.500   0.000   0.6      -0.060000
+2030-01-01 00:00:00        0.500   0.000   0.6      -0.060000
+2030-01-01 01:00:00        0.500   0.000   0.6      -0.060000
