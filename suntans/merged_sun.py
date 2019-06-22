@@ -86,7 +86,7 @@ if not args.resume:
     model.load_template("sun-template.dat")
 
     model.config['Nkmax']=50
-    model.config['stairstep']=0
+    model.config['stairstep']=1
     model.dredge_depth=-2 + z_offset_manual # 2m below the offset of -5m.
 
     dt_secs=5.0
@@ -103,13 +103,13 @@ if not args.resume:
     model.config['nstepsperncfile']=int( 5*86400/(int(model.config['ntaverage'])*dt_secs) )
     model.config['mergeArrays']=1
     
-    model.config['rstretch']=1.12 # about 1.7m surface layer thickness
+    model.config['rstretch']=1.125 # about 1.7m surface layer thickness
     model.config['Cmax']=30.0 # volumetric is a better test, this is more a backup.
 
     # esp. with edge depths, seems better to use z0B so that very shallow
     # edges can have the right drag.
     model.config['CdB']=0
-    model.config['z0B']=0.001
+    model.config['z0B']=0.002
 
     model.use_edge_depths=True
 
@@ -128,21 +128,32 @@ if not args.resume:
     # This grid comes in with NAVD88 elevation
     dest_grid=os.path.join(grid_dir,"spliced_grids_01_bathy.nc")
     grid=unstructured_grid.UnstructuredGrid.from_ugrid(dest_grid)
+    # older iterations called bed elevation 'depth', but now I want to call it
+    # z_bed
+    try:
+        grid.cells['z_bed']
+    except ValueError:
+        grid.add_cell_field('z_bed',grid.cells['depth'])
+    try:
+        grid.edges['edge_z_bed']
+    except ValueError:
+        grid.add_edge_field('edge_z_bed',grid.edges['edge_depth'])
+
     # which are modified before giving to the model
-    grid.cells['depth'] += z_offset_manual
-    grid.edges['edge_depth'] += z_offset_manual
+    grid.cells['z_bed'] += z_offset_manual
+    grid.edges['edge_z_bed'] += z_offset_manual
     model.set_grid(grid)
 
     # make sure edge depths actually were included
-    edge_depths=model.grid.edges['edge_depth']
-    assert edge_depths.min()<0.0,"Looks like edge depths were not set on %s"%dest_grid
+    edge_z=model.grid.edges['edge_z_bed']
+    assert edge_z.min()<0.0,"Looks like edge depths were not set on %s"%dest_grid
 else:
     old_model=drv.SuntansModel.load(args.resume)
     model=old_model.create_restart(symlink=True)
     model.dredge_depth=None # no need to dredge grid if a restart
 
-    edge_depths=model.grid.edges['edge_depth']
-    assert edge_depths.min()<0.0,"Looks like edge depths were not found in restart"
+    edge_z=model.grid.edges['edge_z_bed']
+    assert edge_z.min()<0.0,"Looks like edge depths were not found in restart"
 
 # common to restart and initial run:
 model.projection="EPSG:26910"
@@ -226,6 +237,7 @@ import sfb_common
 sfb_common.add_delta_bcs(model,cache_dir)
 sfb_common.add_usgs_stream_bcs(model,cache_dir)  # disable if no internet
 sfb_common.add_potw_bcs(model,cache_dir)
+
 
 ##
 from stompy.io.local import coamps

@@ -22,7 +22,7 @@ six.moves.reload_module(hycom)
 
 ##
 run_start=np.datetime64("2017-06-15")
-run_stop =np.datetime64("2018-01-31")
+run_stop =np.datetime64("2018-06-10")
 
 hycom_lon_range=[-124.9, -121.7 ]
 hycom_lat_range=[35.9, 39.0]

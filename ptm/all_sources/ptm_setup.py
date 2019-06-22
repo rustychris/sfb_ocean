@@ -7,18 +7,21 @@ six.moves.reload_module(ptm_config)
 import numpy as np
 
 ## 
-model=sun_driver.SuntansModel.load("/opt2/sfb_ocean/suntans/runs/merge_009-20170601")
+model=sun_driver.SuntansModel.load("/opt2/sfb_ocean/suntans/runs/merge_009-20171201")
 model.load_bc_ds()
 
 ##
 
 class Config(ptm_config.PtmConfig):
     # positive: up, negative: down
-    rising_speeds_mps=[0.06,0.02,0.006,0.002,0.0006,
-                       0,
-                       -0.06,-0.02,-0.006,-0.002,-0.0006]
+    #rising_speeds_mps=[0.06,0.02,0.006,0.002,0.0006,
+    #                   0,
+    #                   -0.06,-0.02,-0.006,-0.002,-0.0006]
     # slim that down some
-    rising_speeds_mps=[0.02,0,-0.02]
+    rising_speeds_mps=[0.002,0,-0.002]
+    #rising_speeds_mps=[0.06,0.006,0.0006,
+    #                   0,
+    #                   -0.06,-0.006,-0.0006]
     @property
     def behavior_names(self):
         names=[]
@@ -75,14 +78,18 @@ YYYY-MM-DD HH:MM:SS      DISTANCE SPEED  DISTANCE   SPEED
 
 cfg=Config()
 
-cfg.rel_time=model.run_start+5*24*np.timedelta64(1,'h')
+#cfg.rel_time=model.run_start+5*24*np.timedelta64(1,'h')
+cfg.rel_time=np.datetime64("2017-06-05")
 # 1 day while testing:
 # cfg.end_time=cfg.rel_time + np.timedelta64(86400,'s')
-cfg.end_time=model.run_stop - np.timedelta64(3600,'s')
+cfg.end_time=np.datetime64("2017-12-30")
+#cfg.end_time = model.run_stop - np.timedelta64(3600,'s')
 
-#cfg.run_dir="ptm_20000" # all sources, 3 behaviors, 24 hours
+# cfg.run_dir="ptm_20000" # all sources, 3 behaviors, 24 hours
 # cfg.run_dir='ebmud_all_w' # actually ebda, and the full slate of w_s, for june 2017.
-cfg.run_dir="napa_select_w"
+# cfg.run_dir="napa_select_w"
+# cfg.run_dir='ebda_most_w_dec' # parallel run starting in June, most behaviors, ebda release.
+cfg.run_dir='all_source_select_w' # 3 behaviors at each source.
 
 # add releases
 
@@ -196,7 +203,7 @@ enable_sources=[
     'src002'  # SFPUC
 ]
 
-enable_sources=['NAPA']
+# enable_sources=['src000','NAPA']
     
 # For each of the flow inputs, add up, down, neutral
 for behavior in cfg.behavior_names:
@@ -236,6 +243,29 @@ for behavior in cfg.behavior_names:
 cfg.clean()
 cfg.write()
 
+##
+
+# try to generate the hydro part
+# assumes that all average files have been converted, and prefixed
+# with ptm_
+models=model.chain_restarts()
+lines=[]
+file_count=0
+for mod in models:
+    for avg in mod.avg_outputs():
+        ptm_avg=os.path.join(os.path.dirname(avg),"ptm_"+os.path.basename(avg))
+        assert os.path.exists(ptm_avg),ptm_avg
+        file_count+=1
+        lines+=[" -- INPUT FILE %d --"%file_count,
+                "  HYDRO_FILE_PATH = '%s/'"%os.path.dirname(ptm_avg),
+                "  FILENAME = '%s'"%os.path.basename(ptm_avg),
+                "  GRD_NAME = '%s'"%os.path.basename(ptm_avg),
+                ""]
+        
+
+with open(os.path.join(cfg.run_dir,"FISH_PTM_hydrodynamics.inp"),'wt') as fp:
+    fp.write(" NUM_FILES = %d\n"%file_count)
+    fp.write("\n".join(lines))
 
 ##       
 if 0:            
