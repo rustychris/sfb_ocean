@@ -68,6 +68,8 @@ def add_potw_bcs(model,cache_dir,temperature=20.0):
             Q_bc=drv.FlowBC(name=potw_name,Q=Q_da,filters=[dfm.Lag(-offset)],
                             dredge_depth=model.dredge_depth)
         else:
+            print("_____DEBUGGING_____ OMIT SourceSink BCs")
+            continue
             print("%s: source bc"%potw_name)
             Q_bc=drv.SourceSinkBC(name=potw_name,Q=Q_da,filters=[dfm.Lag(-offset)],
                                   dredge_depth=model.dredge_depth)
