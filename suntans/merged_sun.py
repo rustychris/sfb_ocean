@@ -75,9 +75,10 @@ z_offset_manual=-5 # m
 # or (-5+0.94) m in the model datum.
 msl_navd88=0.94 # m
 
-drv.SuntansModel.sun_bin_dir="/home/rusty/src/suntans/main"
+import local_config
+drv.SuntansModel.sun_bin_dir=local_config.sun_bin_dir # "/home/rusty/src/suntans/main"
 # AVOID anaconda mpi (at least if suntans is compiled with system mpi)
-drv.SuntansModel.mpi_bin_dir="/usr/bin/"
+drv.SuntansModel.mpi_bin_dir=local_config.mpi_bin_dir # "/usr/bin/"
 
 if not args.resume:
     # HYCOM experiments change just before 2017-06-15
@@ -94,13 +95,13 @@ if not args.resume:
     # had been ramping at 86400, but don't linger so much...
     model.config['thetaramptime']=43200
     
-    model.config['ntout']=int(30*60/dt_secs) # 30 minutes, but can delete it
+    model.config['ntout']=int(86400/dt_secs) # daily
     model.config['ntaverage']=int(30*60/dt_secs) # 30 minutes
     model.config['ntoutStore']=int(86400/dt_secs) # daily
     model.config['calcaverage']=1
     model.config['averageNetcdfFile']="average.nc"
-    # 5 days per average file
-    model.config['nstepsperncfile']=int( 5*86400/(int(model.config['ntaverage'])*dt_secs) )
+    # 40 days per average file - keep each month in a file.
+    model.config['nstepsperncfile']=int( 40*86400/(int(model.config['ntaverage'])*dt_secs) )
     model.config['mergeArrays']=1
     
     model.config['rstretch']=1.125 # about 1.7m surface layer thickness
