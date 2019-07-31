@@ -5,13 +5,22 @@ utils.path("..")
 import bathy
 from stompy.grid import depth_connectivity
 
-## 
-g_in='splice-merge-05-filled-edit07.nc'
-g_out=g_in.replace('.nc','-bathy.nc')
+##
+import sys
+
+g_in=sys.argv[1] # 'splice-merge-05-filled-edit48.nc'
+g_out=sys.argv[2] # g_in.replace('.nc','-bathy.nc')
+
+print(g_in)
+print(g_out)
+
+      
 assert g_in!=g_out
 shallow_thresh=-1
 
 g=unstructured_grid.UnstructuredGrid.from_ugrid(g_in)
+if g.max_sides > 4:
+    g.modify_max_sides(4)
 
 dem=bathy.dem()
 
@@ -80,6 +89,13 @@ g.add_cell_field('z_bed',np.asarray(z_cell_edgeminthresh),
 
 ##
 
-g.write_ugrid(g_out)
+# raise Exception("Add code to set z0B where not already set")
+rough='z0B'
+if rough in g.edges.dtype.names:
+    missing=g.edges[rough]==0
+    g.edges[rough][missing]=0.002
+
+## 
+g.write_ugrid(g_out,overwrite=True)
 
 
