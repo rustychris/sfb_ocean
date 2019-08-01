@@ -1,5 +1,5 @@
 # External driver script
-
+import os
 import datetime
 import subprocess
 import pandas as pd
@@ -13,11 +13,11 @@ run_dir=None
 
 for a,b in zip(periods[:-1],periods[1:]):
     b=b.replace(hour=12) # get some overlap
-    previous_run=run_dir
+    previous_run_dir=run_dir
     run_dir="runs/merged_018_%s"%(a.strftime('%Y%m'))
 
     if os.path.exists(run_dir):
-        if sun_driver.SuntansModel.run_complete(run_dir):
+        if sun_driver.SuntansModel.run_completed(run_dir):
             print("%s has already run"%run_dir)
             continue
         else:
@@ -34,3 +34,6 @@ for a,b in zip(periods[:-1],periods[1:]):
 
     # will raise exception on child failure.
     proc=subprocess.run(cmd,shell=True,check=True)
+
+    if not sun_driver.SuntansModel.run_completed(run_dir):
+        print("That run failed -- will bail out")

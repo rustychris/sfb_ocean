@@ -67,7 +67,7 @@ read_otps.OTPS_DATA='../derived'
 use_temp=True
 use_salt=True
 ocean_method=args.ocean # 'hycom'
-grid_dir="grid-merged"
+grid_dir="grid-merge-suisun"
 # moving to have all of the elevation offset stuff more manual, less
 # magic.  This gives the difference between model 0 and NAVD88.
 z_offset_manual=-5 # m
@@ -127,7 +127,7 @@ if not args.resume:
     model.run_start=np.datetime64(args.start)
 
     # This grid comes in with NAVD88 elevation
-    dest_grid=os.path.join(grid_dir,"spliced_grids_01_bathy.nc")
+    dest_grid=os.path.join(grid_dir,"spliced-bathy.nc")
     grid=unstructured_grid.UnstructuredGrid.from_ugrid(dest_grid)
     # older iterations called bed elevation 'depth', but now I want to call it
     # z_bed
@@ -135,19 +135,25 @@ if not args.resume:
         grid.cells['z_bed']
     except ValueError:
         grid.add_cell_field('z_bed',grid.cells['depth'])
-    try:
-        grid.edges['edge_z_bed']
-    except ValueError:
+
+    edge_fields=grid.edges.dtype.names
+    if ('edge_z_bed' not in edge_fields) and ('edge_depth' in edge_fields):
         grid.add_edge_field('edge_z_bed',grid.edges['edge_depth'])
+        edge_fields=grid.edges.dtype.names
 
     # which are modified before giving to the model
     grid.cells['z_bed'] += z_offset_manual
-    grid.edges['edge_z_bed'] += z_offset_manual
+
+    if 'edge_z_bed' in edge_fields:
+        grid.edges['edge_z_bed'] += z_offset_manual
+    else:
+        log.warning("No edge depths")
+        
     model.set_grid(grid)
 
     # make sure edge depths actually were included
-    edge_z=model.grid.edges['edge_z_bed']
-    assert edge_z.min()<0.0,"Looks like edge depths were not set on %s"%dest_grid
+    #edge_z=model.grid.edges['edge_z_bed']
+    #assert edge_z.min()<0.0,"Looks like edge depths were not set on %s"%dest_grid
 else:
     old_model=drv.SuntansModel.load(args.resume)
     model=old_model.create_restart(symlink=True)
@@ -254,11 +260,6 @@ assert (np.diff(model.met_ds.nt.values)/np.timedelta64(1,'s')).min() > 0
 # Air temp for met model
 import coamps_temp
 six.moves.reload_module(coamps_temp)
-if 0: 
-    coamps_temp.add_coamps_fields(model,cache_dir,
-                                  [('air_temp','Tair'),
-                                   ('rltv_hum','RH')])
-    model.config['metmodel']=1 # wood et al?
 if 1:
     # turns out grnd_sea_temp is (a) in Kelvin, and (b)
     # likely has a lot of bleed from land into water.
@@ -272,7 +273,12 @@ if 1:
                                   [('grnd_sea_temp','Tair') ],
                                   mask_field=land_sea)
     model.met_ds.Tair.values[:] -= 273.15 # Kelvin to Celsius
-    assert model.met_ds.Tair.values.min()>=0.0,"Maybe bad K->C conversion"
+    min_Tair=model.met_ds.Tair.values.min()
+    
+    if not (min_Tair>=0):
+        log.error("min Tair value: %s"%(min_Tair))
+    assert min_Tair>=0.0,"Maybe bad K->C conversion"
+    assert np.isfinite(min_Tair),"Bad values in Tair"
     model.config['metmodel']=5 # nudge
 
 ##
