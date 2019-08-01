@@ -1,0 +1,142 @@
+<?xml version="1.0"?>
+<Object name="VisIt">
+    <Field name="Version" type="string">2.10.3</Field>
+    <Object name="GUI">
+        <Object name="FileServerList">
+            <Field name="path" type="string">/home/rusty/src/sfb_ocean/ptm</Field>
+            <Field name="filter" type="string">*</Field>
+            <Field name="useCurrentDir" type="bool">true</Field>
+            <Field name="automaticFileGrouping" type="bool">true</Field>
+            <Field name="smartFileGrouping" type="bool">false</Field>
+            <Field name="showDotFiles" type="bool">false</Field>
+            <Object name="recentpaths">
+                <Field name="169.237.152.11" type="stringVector">"/home/rusty" "/home/rusty/src" "/home/rusty/src/suntans" "/home/rusty/src/sfb_ocean" "/home/rusty/src/sfb_ocean/suntans" "/home/rusty/src/sfb_ocean/suntans/runs" "/home/rusty/src/sfb_ocean/suntans/runs/bay-v01-201706" "/opt2/sfb_ocean" "/opt2/sfb_ocean/suntans" "/opt2/sfb_ocean/suntans/runs" "/opt2/sfb_ocean/suntans/runs/merge_007-20170607" "/home/rusty/src/sfb_ocean/ptm" "/home/rusty/src/sfb_ocean/ptm/csvs-DOWN5mm" "/home/rusty/src/sfb_ocean/ptm/csvs-PASSIVE" "/home/rusty/src/sfb_ocean/ptm/csvs-UP5mm" </Field>
+                <Field name="localhost" type="stringVector">"/home/rusty/src/sfb_ocean/ptm" "/home/rusty" "/home/rusty/tmp" "/home/rusty/src/tokyo_model/dfm/runs" "/home/rusty/src/visit2_13_2.linux-x86_64/data" "/home/rusty/src/hor_flow_and_salmon/model/suntans/runs" "/home/rusty/src/hor_flow_and_salmon/model/dfm/dfm/runs/hor_004" "/home/rusty/src/hor_flow_and_salmon/model/dfm/dfm/runs/hor_004/DFM_OUTPUT_flowfm" "/home/rusty/src/hor_flow_and_salmon/model/suntans" </Field>
+            </Object>
+        </Object>
+        <Object name="AppearanceAttributes">
+            <Field name="useSystemDefault" type="bool">false</Field>
+            <Field name="background" type="string">#c0c0c0</Field>
+            <Field name="foreground" type="string">#000000</Field>
+            <Field name="fontName" type="string">"Luxi Sans,12,-1,5,50,0,0,0,0,0"</Field>
+            <Field name="style" type="string">Windows</Field>
+            <Field name="orientation" type="int">0</Field>
+            <Field name="defaultForeground" type="string">#232627</Field>
+            <Field name="defaultBackground" type="string">#eff0f1</Field>
+            <Field name="defaultFontName" type="string">"Sans Serif,9,-1,5,50,0,0,0,0,0"</Field>
+            <Field name="defaultStyle" type="string">plastique</Field>
+            <Field name="defaultOrientation" type="int">0</Field>
+        </Object>
+        <Object name="Animation">
+            <Field name="x" type="int">3450</Field>
+            <Field name="y" type="int">0</Field>
+            <Field name="width" type="int">372</Field>
+            <Field name="height" type="int">252</Field>
+            <Field name="visible" type="bool">false</Field>
+            <Field name="posted" type="bool">false</Field>
+        </Object>
+        <Field name="postWhenShown" type="bool">false</Field>
+        <Object name="Annotation">
+            <Field name="x" type="int">3878</Field>
+            <Field name="y" type="int">0</Field>
+            <Field name="width" type="int">598</Field>
+            <Field name="height" type="int">744</Field>
+            <Field name="visible" type="bool">false</Field>
+            <Field name="posted" type="bool">false</Field>
+            <Field name="activeTab" type="int">0</Field>
+        </Object>
+        <Object name="Appearance">
+            <Field name="x" type="int">944</Field>
+            <Field name="y" type="int">353</Field>
+            <Field name="width" type="int">334</Field>
+            <Field name="height" type="int">279</Field>
+            <Field name="visible" type="bool">false</Field>
+            <Field name="posted" type="bool">false</Field>
+        </Object>
+        <Object name="Commands">
+            <Field name="x" type="int">2047</Field>
+            <Field name="y" type="int">249</Field>
+            <Field name="width" type="int">975</Field>
+            <Field name="height" type="int">1007</Field>
+            <Field name="visible" type="bool">true</Field>
+            <Field name="posted" type="bool">false</Field>
+            <Field name="macroStorageMode" type="int">0</Field>
+            <Field name="macroAppend" type="bool">false</Field>
+        </Object>
+        <Object name="Database correlation list">
+            <Field name="x" type="int">2908</Field>
+            <Field name="y" type="int">98</Field>
+            <Field name="width" type="int">488</Field>
+            <Field name="height" type="int">456</Field>
+            <Field name="visible" type="bool">false</Field>
+            <Field name="posted" type="bool">false</Field>
+        </Object>
+        <Object name="File open">
+            <Field name="x" type="int">653</Field>
+            <Field name="y" type="int">360</Field>
+            <Field name="width" type="int">840</Field>
+            <Field name="height" type="int">458</Field>
+            <Field name="visible" type="bool">false</Field>
+        </Object>
+        <Object name="Information">
+            <Field name="x" type="int">694</Field>
+            <Field name="y" type="int">297</Field>
+            <Field name="width" type="int">669</Field>
+            <Field name="height" type="int">295</Field>
+            <Field name="visible" type="bool">false</Field>
+        </Object>
+        <Object name="Pick">
+            <Field name="x" type="int">1554</Field>
+            <Field name="y" type="int">26</Field>
+            <Field name="width" type="int">362</Field>
+            <Field name="height" type="int">865</Field>
+            <Field name="visible" type="bool">false</Field>
+            <Field name="posted" type="bool">false</Field>
+            <Field name="autoShow" type="bool">true</Field>
+            <Field name="savePicks" type="bool">false</Field>
+            <Field name="userMaxTabs" type="int">8</Field>
+            <Field name="activeOptionsTab" type="int">0</Field>
+        </Object>
+        <Object name="Plugin Manager">
+            <Field name="x" type="int">498</Field>
+            <Field name="y" type="int">74</Field>
+            <Field name="width" type="int">620</Field>
+            <Field name="height" type="int">538</Field>
+            <Field name="visible" type="bool">false</Field>
+            <Field name="posted" type="bool">false</Field>
+            <Field name="activeTab" type="int">2</Field>
+        </Object>
+        <Object name="View">
+            <Field name="x" type="int">2250</Field>
+            <Field name="y" type="int">265</Field>
+            <Field name="width" type="int">414</Field>
+            <Field name="height" type="int">624</Field>
+            <Field name="visible" type="bool">false</Field>
+            <Field name="posted" type="bool">false</Field>
+            <Field name="activeTab" type="int">2</Field>
+        </Object>
+        <Object name="MainWin">
+            <Field name="x" type="int">2368</Field>
+            <Field name="y" type="int">98</Field>
+            <Field name="width" type="int">532</Field>
+            <Field name="height" type="int">1170</Field>
+            <Field name="SPLITTER_VALUES_V2" type="floatVector">0 0.5980676 0.3980676 </Field>
+        </Object>
+        <Object name="Pseudocolor plot attributes">
+            <Field name="x" type="int">2145</Field>
+            <Field name="y" type="int">420</Field>
+            <Field name="width" type="int">612</Field>
+            <Field name="height" type="int">541</Field>
+            <Field name="visible" type="bool">false</Field>
+            <Field name="posted" type="bool">false</Field>
+        </Object>
+        <Field name="plotDatabases" type="stringVector">"169.237.152.11:/opt2/sfb_ocean/suntans/runs/merge_007-20170607/Estuary_SUNTANS.nc_0000.nc" "169.237.152.11:/home/rusty/src/sfb_ocean/ptm/csvs-PASSIVE/PASSIVE_*.csv database" "169.237.152.11:/home/rusty/src/sfb_ocean/ptm/csvs-DOWN5mm/DOWN5mm_*.csv database" "169.237.152.11:/home/rusty/src/sfb_ocean/ptm/csvs-UP5mm/UP5mm_*.csv database" </Field>
+        <Object name="TimeFormat">
+            <Field name="displayMode" type="string">Cycles</Field>
+            <Field name="precision" type="int">5</Field>
+        </Object>
+        <Field name="showSelectedFiles" type="bool">false</Field>
+        <Field name="allowFileSelectionChange" type="bool">true</Field>
+        <Field name="enableWarningMessagePopups" type="bool">true</Field>
+    </Object>
+</Object>
