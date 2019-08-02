@@ -36,7 +36,8 @@ def add_coamps_fields(model,cache_dir,fields=[('air_temp','Tair'),
                                   src_ds.y.values[-1]],
                          F=src_ds[coamps_fields[0]].isel(time=0).values)
     logging.info("coamps temp: gridded resolution: %.2f %.2f"%(fld.dx,fld.dy))
-    mask=fld.polygon_mask(g_poly)
+    # RH 2019-08-01: some nan values sneak through the other masks. try to
+    # masking out any pixels that are nan on this initial time slice.
 
     time_slc=(src_ds.time.values>=period_start) & (src_ds.time.values<=period_stop)
     src_sub_ds=src_ds.isel(time=time_slc)
@@ -48,25 +49,34 @@ def add_coamps_fields(model,cache_dir,fields=[('air_temp','Tair'),
     assert np.all( np.abs( model.met_ds.nt.values - src_sub_ds.time.values) < np.timedelta64(600,'s') )
 
     X,Y=np.meshgrid(src_ds.x.values,src_ds.y.values)
-    xcoords=X[mask]
-    ycoords=Y[mask]
-
-    if mask_field is None:
-        ravel_mask=slice(None) # no further masking
-    else:
-        xy=np.c_[xcoords,ycoords]
-        ravel_mask=mask_field(xy)==0.0
-        xcoords=xcoords[ravel_mask]
-        ycoords=ycoords[ravel_mask]
-        
+    XY=np.stack((X,Y), axis=-1)
+    base_valid=fld.polygon_mask(g_poly)
+    if mask_field is not None:
+        # additionally mask by a field passed in
+        base_valid = base_valid & (mask_field(XY)==0.0)
+            
     met_ds=model.met_ds
     for coamps_name,sun_name in fields:
+        all_values=src_sub_ds[coamps_name].values
+        # additionally restrict to pixels where this variable is finite
+        # over all time steps
+        valid=base_valid & np.all(np.isfinite(all_values),axis=0)
+        values=src_sub_ds[coamps_name].values[:,valid]
+
+        # moved mask code inside the loop in order to catch all nan values
+        # even if they are finite at the start, and nan later.
+        xcoords=X[valid]
+        ycoords=Y[valid]
+
         for v in [sun_name,'x_'+sun_name,'y_'+sun_name,'z_'+sun_name]:
             if v in met_ds: del met_ds[v]
         met_ds['x_'+sun_name]=("N"+sun_name),xcoords
         met_ds['y_'+sun_name]=("N"+sun_name),ycoords
         met_ds['z_'+sun_name]=("N"+sun_name),10.0*np.ones_like(xcoords)
 
-        values=src_sub_ds[coamps_name].values[:,mask][:,ravel_mask]
+        # DBG:
+        #if not np.all(np.isfinite(values)):
+        #    import pdb # each time step, 519 values are nan.
+        #    pdb.set_trace()
         assert np.all(np.isfinite(values))
         met_ds[sun_name]=(('nt','N'+sun_name),values)

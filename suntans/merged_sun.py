@@ -103,6 +103,7 @@ if not args.resume:
     # 40 days per average file - keep each month in a file.
     model.config['nstepsperncfile']=int( 40*86400/(int(model.config['ntaverage'])*dt_secs) )
     model.config['mergeArrays']=1
+    model.config['metmodel']=5 # wind, temperature nudging
     
     model.config['rstretch']=1.125 # about 1.7m surface layer thickness
     model.config['Cmax']=30.0 # volumetric is a better test, this is more a backup.

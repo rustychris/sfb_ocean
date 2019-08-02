@@ -14,7 +14,7 @@ run_dir=None
 for a,b in zip(periods[:-1],periods[1:]):
     b=b.replace(hour=12) # get some overlap
     previous_run_dir=run_dir
-    run_dir="runs/merged_018_%s"%(a.strftime('%Y%m'))
+    run_dir="/shared2/src/sfb_ocean/suntans/runs/merged_018_%s"%(a.strftime('%Y%m'))
 
     if os.path.exists(run_dir):
         if sun_driver.SuntansModel.run_completed(run_dir):
@@ -37,3 +37,5 @@ for a,b in zip(periods[:-1],periods[1:]):
 
     if not sun_driver.SuntansModel.run_completed(run_dir):
         print("That run failed -- will bail out")
+        break
+    
