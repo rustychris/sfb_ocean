@@ -134,11 +134,8 @@ def add_wind_preblended(model,cache_dir,pad=np.timedelta64(3*3600,'s')):
     logging.info("New Met Dataset:")
     logging.info(str(met_ds))
     model.met_ds=met_ds
-    if int(model.config['metmodel']) not in [0,4]:
-        logging.warning("Adding wind, will override metmodel %s => %d"%(model.config['metmodel'],
-                                                                        4))
-    model.config['metmodel']=4 # wind only
-    
+    if int(model.config['metmodel']) not in [4,5]:
+        logging.warning("While adding wind, noticed metmodel %s"%(model.config['metmodel']))
 
 
 def add_wind_coamps_sfei(model,cache_dir,pad=np.timedelta64(3*3600,'s'),
