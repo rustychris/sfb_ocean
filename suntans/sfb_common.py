@@ -1,6 +1,7 @@
 import numpy as np
 import xarray as xr
 import os
+import logging as log
 
 import stompy.model.delft.dflow_model as dfm
 import stompy.model.suntans.sun_driver as drv
@@ -59,18 +60,16 @@ def add_potw_bcs(model,cache_dir,temperature=20.0):
         while model.run_stop > Q_da.time.values[-1]+offset:
             offset+=np.timedelta64(365,'D')
         if offset:
-            print("Offset for POTW %s is %s"%(potw_name,offset))
+            log.info("Offset for POTW %s is %s"%(potw_name,offset))
 
         # use the geometry to decide whether this is a flow BC or a point source
         hits=model.match_gazetteer(name=potw_name)
         if hits[0]['geom'].type=='LineString':
-            print("%s: flow bc"%potw_name)
+            log.info("%s: flow bc"%potw_name)
             Q_bc=drv.FlowBC(name=potw_name,Q=Q_da,filters=[dfm.Lag(-offset)],
                             dredge_depth=model.dredge_depth)
         else:
-            print("_____DEBUGGING_____ OMIT SourceSink BCs")
-            continue
-            print("%s: source bc"%potw_name)
+            log.info("%s: source bc"%potw_name)
             Q_bc=drv.SourceSinkBC(name=potw_name,Q=Q_da,filters=[dfm.Lag(-offset)],
                                   dredge_depth=model.dredge_depth)
 
