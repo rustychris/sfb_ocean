@@ -1,2 +1,4 @@
 *.nc
 old
+*.log
+SFEI_Wind

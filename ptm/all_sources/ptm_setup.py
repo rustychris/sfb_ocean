@@ -7,7 +7,12 @@ six.moves.reload_module(ptm_config)
 import numpy as np
 
 ## 
-model=sun_driver.SuntansModel.load("/opt2/sfb_ocean/suntans/runs/merge_016-201706")
+
+# this run doesn't yet exist on cws-linuxmodeling
+model=sun_driver.SuntansModel.load("/opt2/sfb_ocean/suntans/runs/merge_017-201706")
+# model=sun_driver.SuntansModel.load("/opt2/sfb_ocean/suntans/runs/merge_009-20171201")
+# mounting cws-linuxmodeling hard drive externally
+# model=sun_driver.SuntansModel.load("/media/rusty/80c8a8ec-71d2-4687-aa6b-41c23f557be8/sfb_ocean/suntans/runs/merge_009-20170801")
 model.load_bc_ds()
 
 ##
@@ -76,6 +81,8 @@ YYYY-MM-DD HH:MM:SS      DISTANCE SPEED  DISTANCE   SPEED
                          .format(dist_option=dist_option,w_mps=w_mps) )
             
     def add_output_sets(self):
+        # when doing sediment particles, may want that state output,
+        # but otherwise could probably set to 'none'
         self.lines+=["""\
 OUTPUT INFORMATION 
    NOUTPUT_SETS = 1
@@ -92,24 +99,44 @@ OUTPUT INFORMATION
    STATE_OUTPUT_INTERVAL_HOURS = 1.0
 """]
         
+    def add_release_timing(self):
+        self.lines+=[f"""\
+RELEASE TIMING INFORMATION
+   NRELEASE_TIMING_SETS = 1
+   -- release timing set 1 ---        
+     RELEASE_TIMING_SET = 'interval'
+     INITIAL_RELEASE_TIME = '{self.rel_time_str}'
+     RELEASE_TIMING = 'interval'
+       NINTERVALS = {30*24}
+       RELEASE_INTERVAL_HOURS = 1.0
+     INACTIVATION_TIME = 'none'"""
+          ]
 
+        
+                
 cfg=Config()
 
 #cfg.rel_time=model.run_start+5*24*np.timedelta64(1,'h')
-cfg.rel_time=np.datetime64("2017-06-05")
+cfg.rel_time=np.datetime64("2017-06-15")  # Allow some spinup
+
 # 1 day while testing:
-cfg.end_time=cfg.rel_time + np.timedelta64(86400,'s')
-# cfg.end_time=np.datetime64("2017-12-30")
-# cfg.end_time = model.run_stop - np.timedelta64(3600,'s')
+# cfg.end_time=cfg.rel_time + np.timedelta64(86400,'s')
+cfg.end_time=np.datetime64("2017-08-15")
+
+# or the whole hydro
+#cfg.end_time = model.run_stop - np.timedelta64(3600,'s')
 
 # cfg.run_dir="ptm_20000" # all sources, 3 behaviors, 24 hours
 # cfg.run_dir='ebmud_all_w' # actually ebda, and the full slate of w_s, for june 2017.
 # cfg.run_dir="napa_select_w"
 # cfg.run_dir='ebda_most_w_dec' # parallel run starting in June, most behaviors, ebda release.
+# cfg.run_dir='compare_sediment' # 3 behaviors at each source, 100 particles/hour
 
-cfg.run_dir='compare_sediment' # 3 behaviors at each source, 100 particles/hour
+# 5 is for pretty small runs.
+particles_per_interval=5
 
-particles_per_interval=100
+# cfg.run_dir='all_source_select_w' # 3 behaviors at each source.
+cfg.run_dir='all_source_select_w_const' # constant # particles / hr
 
 # add releases
 for seg_idx in range(len(model.bc_ds.Nseg)):
@@ -134,9 +161,10 @@ for seg_idx in range(len(model.bc_ds.Nseg)):
                    "   YCENTER = %.6f"%xy[1]]
     release+=[f"""\
    NPARTICLE_ASSIGNMENT = 'specify'
-    NPARTICLES_PER_RELEASE_INTERVAL = {particles_per_interval}
-    AVERAGE_NPARTICLES_IN_VERTICAL=10
-    DISTRIBUTION_AMONG_WATER_COLUMNS = 'depth_weighted'
+     TIME_VARIABLE_RELEASE = 'false'
+     NPARTICLES_PER_RELEASE_INTERVAL = {particles_per_interval}
+     AVERAGE_NPARTICLES_IN_VERTICAL = 1
+     DISTRIBUTION_AMONG_WATER_COLUMNS = 'depth_weighted'
    ZMIN_NON_DIM = 0.0
    ZMAX_NON_DIM = 1.0
    VERT_SPACING = 'uniform'"""]
@@ -160,19 +188,19 @@ for Npoint in range(len(model.bc_ds.Npoint)):
          MIN_BED_ELEVATION_METERS = -99.
          MAX_BED_ELEVATION_METERS =  99. 
          HORIZONTAL_DISTRIBUTION = 'line'
-            XSTART = {pnt[0]:.5f}
-            YSTART = {pnt[1]:.5f}
-            XEND   = {pnt[0]:.5f}
-            YEND   = {pnt[1]:.5f}
+            XSTART = {pnt[0]:.6f}
+            YSTART = {pnt[1]:.6f}
+            XEND   = {pnt[0]:.6f}
+            YEND   = {pnt[1]:.6f}
             NPARTICLE_ASSIGNMENT = 'specify'
               TIME_VARIABLE_RELEASE = 'false'
               NPARTICLES_PER_RELEASE_INTERVAL = {particles_per_interval}
               -- average number of particles per water column
-              AVERAGE_NPARTICLES_IN_VERTICAL = 10
+              AVERAGE_NPARTICLES_IN_VERTICAL = {particles_per_interval}
               -- method of setting the number of particles released in water column
               DISTRIBUTION_AMONG_WATER_COLUMNS = 'uniform'
-         ZMIN_NON_DIM = 0.0
-         ZMAX_NON_DIM = 0.05
+         ZMIN_NON_DIM = 0.3
+         ZMAX_NON_DIM = 0.7
          VERT_SPACING = 'uniform'
 """ ]
     cfg.releases.append(pnt_release)
@@ -199,15 +227,13 @@ enable_sources=[
     'src002'  # SFPUC
 ]
 
-# enable_sources=['src000','NAPA']
-    
 # For each of the flow inputs, add up, down, neutral
 for behavior in cfg.behavior_names:
     for seg_idx in range(len(model.bc_ds.Nseg)):
         flow_name=model.bc_ds.seg_name.values[seg_idx]
         if (enable_sources is not None) and (flow_name not in enable_sources):
             continue
-        group=["""\
+        group=[f"""\
      GROUP = '{flow_name}_{behavior}'
      RELEASE_DISTRIBUTION_SET = '{flow_name}'
      RELEASE_TIMING_SET = 'interval'
@@ -215,7 +241,7 @@ for behavior in cfg.behavior_names:
      BEHAVIOR_SET = '{behavior}'
      OUTPUT_SET = '60min_output'
      OUTPUT_FILE_BASE = '{flow_name}_{behavior}'
-        """.format(flow_name=flow_name,behavior=behavior)]
+        """]
         cfg.groups.append(group)
 
     # And for each point input:
@@ -224,7 +250,7 @@ for behavior in cfg.behavior_names:
         if (enable_sources is not None) and (point_name not in enable_sources):
             continue
 
-        group=["""\
+        group=[f"""\
      GROUP = '{point_name}_{behavior}'
      RELEASE_DISTRIBUTION_SET = '{point_name}'
      RELEASE_TIMING_SET = 'interval'
@@ -232,8 +258,7 @@ for behavior in cfg.behavior_names:
      BEHAVIOR_SET = '{behavior}'
      OUTPUT_SET = '60min_output'
      OUTPUT_FILE_BASE = '{point_name}_{behavior}'
-        """.format(point_name=point_name,
-                   behavior=behavior)]
+        """]
         cfg.groups.append(group)
         
 cfg.clean()
@@ -257,7 +282,6 @@ for mod in models:
                 "  FILENAME = '%s'"%os.path.basename(ptm_avg),
                 "  GRD_NAME = '%s'"%os.path.basename(ptm_avg),
                 ""]
-        
 
 with open(os.path.join(cfg.run_dir,"FISH_PTM_hydrodynamics.inp"),'wt') as fp:
     fp.write(" NUM_FILES = %d\n"%file_count)

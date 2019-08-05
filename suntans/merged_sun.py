@@ -75,9 +75,10 @@ z_offset_manual=-5 # m
 # or (-5+0.94) m in the model datum.
 msl_navd88=0.94 # m
 
-drv.SuntansModel.sun_bin_dir="/home/rusty/src/suntans/main"
+import local_config
+drv.SuntansModel.sun_bin_dir=local_config.sun_bin_dir # "/home/rusty/src/suntans/main"
 # AVOID anaconda mpi (at least if suntans is compiled with system mpi)
-drv.SuntansModel.mpi_bin_dir="/usr/bin/"
+drv.SuntansModel.mpi_bin_dir=local_config.mpi_bin_dir # "/usr/bin/"
 
 if not args.resume:
     # HYCOM experiments change just before 2017-06-15
@@ -95,16 +96,16 @@ if not args.resume:
     # had been ramping at 86400, but don't linger so much...
     model.config['thetaramptime']=43200
     
-    model.config['ntout']=int(30*60/dt_secs) # 30 minutes, but can delete it
+    model.config['ntout']=int(86400/dt_secs) # daily
     model.config['ntaverage']=int(30*60/dt_secs) # 30 minutes
     model.config['ntoutStore']=int(86400/dt_secs) # daily
     model.config['calcaverage']=1
     model.config['averageNetcdfFile']="average.nc"
+
     # 40 days per average file (i.e. one per month)
     model.config['nstepsperncfile']=int( 40*86400/(int(model.config['ntaverage'])*dt_secs) )
-    # 1 day during dev
-    # model.config['nstepsperncfile']=int( 1*86400/(int(model.config['ntaverage'])*dt_secs) )
     model.config['mergeArrays']=1
+    model.config['metmodel']=5 # wind, temperature nudging
     
     model.config['rstretch']=1.125 # about 1.7m surface layer thickness
     model.config['Cmax']=30.0 # volumetric is a better test, this is more a backup.
@@ -133,6 +134,11 @@ if not args.resume:
     grid=unstructured_grid.UnstructuredGrid.from_ugrid(dest_grid)
     # older iterations called bed elevation 'depth', but now I want to call it
     # z_bed
+
+    try:
+        grid.cells['z_bed']
+    except ValueError:
+        raise Exception("Now requiring grid to come in with cell z_bed field")
     
     if 'edge_z_bed' in grid.edges.dtype.names:
         log.info("Grid came in with edge depths")
@@ -152,6 +158,10 @@ if not args.resume:
     grid.edges['edge_z_bed'] += z_offset_manual
         
     model.set_grid(grid)
+
+    # make sure edge depths actually were included
+    edge_z=model.grid.edges['edge_z_bed']
+    assert edge_z.min()<0.0,"Looks like edge depths were not set on %s"%dest_grid
 else:
     old_model=drv.SuntansModel.load(args.resume)
     model=old_model.create_restart(symlink=True)
@@ -258,11 +268,6 @@ assert (np.diff(model.met_ds.nt.values)/np.timedelta64(1,'s')).min() > 0
 # Air temp for met model
 import coamps_temp
 six.moves.reload_module(coamps_temp)
-if 0: 
-    coamps_temp.add_coamps_fields(model,cache_dir,
-                                  [('air_temp','Tair'),
-                                   ('rltv_hum','RH')])
-    model.config['metmodel']=1 # wood et al?
 if 1:
     # turns out grnd_sea_temp is (a) in Kelvin, and (b)
     # likely has a lot of bleed from land into water.
@@ -276,7 +281,12 @@ if 1:
                                   [('grnd_sea_temp','Tair') ],
                                   mask_field=land_sea)
     model.met_ds.Tair.values[:] -= 273.15 # Kelvin to Celsius
-    assert model.met_ds.Tair.values.min()>=0.0,"Maybe bad K->C conversion"
+    min_Tair=model.met_ds.Tair.values.min()
+    
+    if not (min_Tair>=0):
+        log.error("min Tair value: %s"%(min_Tair))
+    assert min_Tair>=0.0,"Maybe bad K->C conversion"
+    assert np.isfinite(min_Tair),"Bad values in Tair"
     model.config['metmodel']=5 # nudge
 ## 
 
