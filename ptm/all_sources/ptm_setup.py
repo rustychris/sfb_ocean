@@ -7,7 +7,7 @@ six.moves.reload_module(ptm_config)
 import numpy as np
 
 ## 
-model=sun_driver.SuntansModel.load("/opt2/sfb_ocean/suntans/runs/merge_009-20171201")
+model=sun_driver.SuntansModel.load("/opt2/sfb_ocean/suntans/runs/merge_016-201706")
 model.load_bc_ds()
 
 ##
@@ -75,43 +75,43 @@ YYYY-MM-DD HH:MM:SS      DISTANCE SPEED  DISTANCE   SPEED
 2030-01-01 01:00:00        0.500   0.000   0.6      {w_mps:.6f}"""
                          .format(dist_option=dist_option,w_mps=w_mps) )
             
+    def add_output_sets(self):
+        self.lines+=["""\
+OUTPUT INFORMATION 
+   NOUTPUT_SETS = 1
+
+   OUTPUT_SET = '60min_output'
+   FLAG_LOG_LOGICAL = 'true'
+   BINARY_OUTPUT_INTERVAL_HOURS = 1.0
+   ASCII_OUTPUT_INTERVAL_HOURS = 'none' 
+   HISTOGRAM_OUTPUT_INTERVAL_HOURS = 'none'
+   STATISTICS_OUTPUT_INTERVAL_HOURS = 24
+   CONCENTRATION_OUTPUT_INTERVAL_HOURS = 24.0
+   REGION_COUNT_OUTPUT_INTERVAL_HOURS = 24.
+   REGION_COUNT_UPDATE_INTERVAL_HOURS = 24.
+   STATE_OUTPUT_INTERVAL_HOURS = 1.0
+"""]
+        
 
 cfg=Config()
 
 #cfg.rel_time=model.run_start+5*24*np.timedelta64(1,'h')
 cfg.rel_time=np.datetime64("2017-06-05")
 # 1 day while testing:
-# cfg.end_time=cfg.rel_time + np.timedelta64(86400,'s')
-cfg.end_time=np.datetime64("2017-12-30")
-#cfg.end_time = model.run_stop - np.timedelta64(3600,'s')
+cfg.end_time=cfg.rel_time + np.timedelta64(86400,'s')
+# cfg.end_time=np.datetime64("2017-12-30")
+# cfg.end_time = model.run_stop - np.timedelta64(3600,'s')
 
 # cfg.run_dir="ptm_20000" # all sources, 3 behaviors, 24 hours
 # cfg.run_dir='ebmud_all_w' # actually ebda, and the full slate of w_s, for june 2017.
 # cfg.run_dir="napa_select_w"
 # cfg.run_dir='ebda_most_w_dec' # parallel run starting in June, most behaviors, ebda release.
-cfg.run_dir='all_source_select_w' # 3 behaviors at each source.
+
+cfg.run_dir='compare_sediment' # 3 behaviors at each source, 100 particles/hour
+
+particles_per_interval=100
 
 # add releases
-
-# flow BCs:
-flow_particle_density={}
-# These are scaled to get roughly 500/day, at least in dry weather.
-flow_particle_density['SacRiver']=0.0001
-flow_particle_density['SJRiver']=0.0001
-flow_particle_density['COYOTE']=0.25
-flow_particle_density['NAPA']=0.17
-flow_particle_density['SCLARAVCc']=0.12
-flow_particle_density['UALAMEDA']=1.0
-flow_particle_density['cccsd']=0.1
-flow_particle_density['ddsd']=0.5
-flow_particle_density['fs']=0.33
-flow_particle_density['lg']=1.0
-flow_particle_density['palo_alto']=0.17
-flow_particle_density['petaluma']=1.
-flow_particle_density['san_jose']=0.04
-flow_particle_density['sonoma_valley']=1.0
-flow_particle_density['sunnyvale']=0.38
-
 for seg_idx in range(len(model.bc_ds.Nseg)):
     flow_name=model.bc_ds.seg_name.values[seg_idx]
     print("Adding segment flow %s"%flow_name)
@@ -121,26 +121,25 @@ for seg_idx in range(len(model.bc_ds.Nseg)):
     edges=model.bc_ds.edgep.values[type2s]
     flow_xy=model.grid.edges_center()[edges]
 
-    # flow-based at boundary edge
-    release=["""\
-   RELEASE_DISTRIBUTION_SET = '{name}' 
+    release=[f"""\
+   RELEASE_DISTRIBUTION_SET = '{flow_name}' 
    MIN_BED_ELEVATION_METERS = -99.
    MAX_BED_ELEVATION_METERS =  99. 
    HORIZONTAL_DISTRIBUTION = 'side'
    SIDE_IDENTIFICATION_METHOD = 'list'
-   NSIDES = {nsides}""".format(name=flow_name,nsides=len(flow_xy))]
+   NSIDES = {len(flow_xy)}"""]
     
     for xy in flow_xy:
         release+= ["   XCENTER = %.6f"%xy[0],
                    "   YCENTER = %.6f"%xy[1]]
-    release+=["""\
-   NPARTICLE_ASSIGNMENT = 'flow'
-   DENSITY_SPECIFICATION_METHOD = 'constant'
-   PARTICLE_DENSITY = {flow_particle_density}
-   PARTICLE_DISTRIBUTION = 'random'
+    release+=[f"""\
+   NPARTICLE_ASSIGNMENT = 'specify'
+    NPARTICLES_PER_RELEASE_INTERVAL = {particles_per_interval}
+    AVERAGE_NPARTICLES_IN_VERTICAL=10
+    DISTRIBUTION_AMONG_WATER_COLUMNS = 'depth_weighted'
    ZMIN_NON_DIM = 0.0
    ZMAX_NON_DIM = 1.0
-    VERT_SPACING = 'uniform'""".format(flow_particle_density=flow_particle_density[flow_name])]
+   VERT_SPACING = 'uniform'"""]
     
     cfg.releases.append(release)
 
@@ -156,18 +155,18 @@ for Npoint in range(len(model.bc_ds.Npoint)):
     pnt=cc[cell]
 
     pnt_release=[
-            """\
+        f"""\
          RELEASE_DISTRIBUTION_SET = '{name}' 
          MIN_BED_ELEVATION_METERS = -99.
          MAX_BED_ELEVATION_METERS =  99. 
          HORIZONTAL_DISTRIBUTION = 'line'
-            XSTART = {x0:.5f}
-            YSTART = {y0:.5f}
-            XEND   = {x1:.5f}
-            YEND   = {y1:.5f}
+            XSTART = {pnt[0]:.5f}
+            YSTART = {pnt[1]:.5f}
+            XEND   = {pnt[0]:.5f}
+            YEND   = {pnt[1]:.5f}
             NPARTICLE_ASSIGNMENT = 'specify'
               TIME_VARIABLE_RELEASE = 'false'
-              NPARTICLES_PER_RELEASE_INTERVAL = 20
+              NPARTICLES_PER_RELEASE_INTERVAL = {particles_per_interval}
               -- average number of particles per water column
               AVERAGE_NPARTICLES_IN_VERTICAL = 10
               -- method of setting the number of particles released in water column
@@ -175,11 +174,8 @@ for Npoint in range(len(model.bc_ds.Npoint)):
          ZMIN_NON_DIM = 0.0
          ZMAX_NON_DIM = 0.05
          VERT_SPACING = 'uniform'
-""".format(name=name,
-           x0=pnt[0],y0=pnt[1],x1=pnt[0],y1=pnt[1])
-    ]
+""" ]
     cfg.releases.append(pnt_release)
-
 
 # full menu:
 enable_sources=[
@@ -214,10 +210,10 @@ for behavior in cfg.behavior_names:
         group=["""\
      GROUP = '{flow_name}_{behavior}'
      RELEASE_DISTRIBUTION_SET = '{flow_name}'
-     RELEASE_TIMING_SET = 'flowbased'
+     RELEASE_TIMING_SET = 'interval'
      PARTICLE_TYPE = 'none'
      BEHAVIOR_SET = '{behavior}'
-     OUTPUT_SET = '30min_output'
+     OUTPUT_SET = '60min_output'
      OUTPUT_FILE_BASE = '{flow_name}_{behavior}'
         """.format(flow_name=flow_name,behavior=behavior)]
         cfg.groups.append(group)
@@ -234,7 +230,7 @@ for behavior in cfg.behavior_names:
      RELEASE_TIMING_SET = 'interval'
      PARTICLE_TYPE = 'none'
      BEHAVIOR_SET = '{behavior}'
-     OUTPUT_SET = '30min_output'
+     OUTPUT_SET = '60min_output'
      OUTPUT_FILE_BASE = '{point_name}_{behavior}'
         """.format(point_name=point_name,
                    behavior=behavior)]
