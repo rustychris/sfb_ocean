@@ -1,27 +1,63 @@
 # External driver script
-import os
+import os, sys
+import numpy as np
+import logging as log
+log.basicConfig(level=log.INFO)
+import glob
 import datetime
 import subprocess
 import pandas as pd
 import shutil
 from stompy.model.suntans import sun_driver
+from stompy import utils
 
-periods=list(pd.date_range(start="2017-06-01",end="2018-06-01",freq='MS').to_pydatetime())
-periods[0]=datetime.datetime(2017,6,10)
+prefix="/shared2/src/sfb_ocean/suntans/runs/merged_018_"
 
-run_dir=None
+series_start=np.datetime64('2017-06-10')
+series_end=np.datetime64('2018-07-01')
+# 10 days and a 12h overlap
+interval=np.timedelta64(10*24 + 12, 'h')
 
-for a,b in zip(periods[:-1],periods[1:]):
-    b=b.replace(hour=12) # get some overlap
-    previous_run_dir=run_dir
-    run_dir="/shared2/src/sfb_ocean/suntans/runs/merged_018_%s"%(a.strftime('%Y%m'))
+existing_runs=glob.glob(prefix+"*")
+existing_runs.sort()
+
+# NB: if an existing run is found it will be used regardless
+# of whether it falls within or before the series start/end.
+# ideally this would ignore runs that are too early (end
+# "much" before series_start), or that come from a chain that
+# starts too late.
+# also assumes that the directories that match prefix will sort
+# chronologically
+
+previous_run_dir=None
+for run_dir in existing_runs[::-1]:
+    log.info(f"Checking runs {run_dir} for completion")
+    if sun_driver.SuntansModel.run_completed(run_dir):
+        previous_run_dir=run_dir
+        log.info(f"{run_dir} is complete and will be the starting point")
+        break
+
+if previous_run_dir is not None:
+    previous_model=sun_driver.SuntansModel.load(previous_run_dir)
+    run_start=previous_model.restartable_time()
+else:
+    run_start=series_start
+    
+while run_start < series_end:
+    # truncate run_start to integer days 
+    run_day_start=utils.floor_dt64(run_start,dt=np.timedelta64(86400,'s'))
+    run_stop=run_day_start+interval
+
+    a=utils.to_datetime(run_start)
+    b=utils.to_datetime(run_stop)
+    run_dir=prefix+a.strftime('%Y%m%d')
 
     if os.path.exists(run_dir):
         if sun_driver.SuntansModel.run_completed(run_dir):
-            print("%s has already run"%run_dir)
-            continue
+            log.error("%s has already run, but we were about to clobber it"%run_dir)
+            sys.exit(1)
         else:
-            print("Stale run in %s will be removed"%run_dir)
+            log.warning("Stale run in %s will be removed"%run_dir)
             shutil.rmtree(run_dir)
     fmt='%Y-%m-%dT%H:%M'
     cmd=f"python merged_sun.py -d {run_dir}"
@@ -30,12 +66,14 @@ for a,b in zip(periods[:-1],periods[1:]):
     else:
         cmd=cmd+ f" -r {previous_run_dir}"
     cmd=cmd+f" -e {b.strftime(fmt)}"
-    print("Running: %s"%cmd)
+    log.info("Running: %s"%cmd)
 
     # will raise exception on child failure.
     proc=subprocess.run(cmd,shell=True,check=True)
 
     if not sun_driver.SuntansModel.run_completed(run_dir):
-        print("That run failed -- will bail out")
+        log.error("That run failed -- will bail out")
         break
-    
+
+    # my stop is your start
+    run_start=run_stop
