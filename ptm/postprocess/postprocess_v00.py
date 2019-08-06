@@ -15,6 +15,9 @@ import os
 import logging as log
 log.basicConfig(level=log.INFO)
 
+log.root.setLevel(log.INFO)
+
+
 import re
 import matplotlib.pyplot as plt
 
@@ -146,12 +149,13 @@ class PtmRun(object):
         
         # get a flow time series for this specific group
         try:
-            seg_i=list(bc_ds.seg_name.values).index(seg_name)
+            seg_i=list(bc_ds.seg_name.values).index(src_name)
             Q_time_series=bc_ds.set_coords('time')['boundary_Q'].isel(Nseg=seg_i)
         except ValueError:
             # point sources are labeled as srcNNN
             pnt_i=int(src_name.replace('src',''))
             Q_time_series=bc_ds.set_coords('time')['point_Q'].isel(Npoint=pnt_i)
+        return Q_time_series
     def get_Qfunc_for_group(self,group):
         """
         thin wrapper to handle time interpolation, 
@@ -185,10 +189,12 @@ base_ret_dtype=[ ('x',np.float64,3), # location
                  ('obs_time','M8[s]'), # time of observation
                  # when this particle was released, how many others
                  # were released within the same group, per hour.
-                 ('grp_rel_per_hour',np.float64)]
+                 ('grp_rel_per_hour',np.float64),
+                 ('mass',np.float64)]
 
 def scan_group(self,group,time_range,z_range=None,grid=None,
                max_age=np.timedelta64(30,'D'),spinup=None,
+               weight=1.0,
                extra_fields=[]):
     if spinup is None: spinup=max_age
 
@@ -211,6 +217,7 @@ def scan_group(self,group,time_range,z_range=None,grid=None,
     # particle-sample, potentially including each particle multiple times.
 
     calc_dtype=[ ('rel_time','M8[s]'),
+                 ('mass',np.float64),
                  ('grp_rel_per_hour',np.float64)]
     
     # mass=np.nan*np.ones(1000) # will be expanded as needed
@@ -224,6 +231,8 @@ def scan_group(self,group,time_range,z_range=None,grid=None,
     # accumulate per-time step observations, to be concatenated at the
     # end and returned
     ret_particles=[]
+
+    Qfunc=self.get_Qfunc_for_group(group)
     
     for ti in range(nsteps):
         t,parts=bf.read_timestep(ti)
@@ -238,7 +247,6 @@ def scan_group(self,group,time_range,z_range=None,grid=None,
             new=np.zeros(len(particles),calc_dtype)
             new['grp_rel_per_hour']=np.nan # mark uninitialized
             particles=np.concatenate([particles,new])
-            log.info(f"Doubled size of mass lookup to {len(particles)}")
 
         # any particles with nan grp_rel_per_hour are assumed new
         # missing now has indices into parts['id']
@@ -249,8 +257,17 @@ def scan_group(self,group,time_range,z_range=None,grid=None,
 
         new_ids=parts['id'][missing] # index into particles for new particles this step
         # this could be inferred.  gets trickier with SJ, Sac and DDSD. FIX.
-        particles['grp_rel_per_hour'][new_ids]=5.0 
+        grp_rel_per_hour=5.0
+        particles['grp_rel_per_hour'][new_ids]=grp_rel_per_hour
         particles['rel_time'][new_ids]=t
+
+        # Sac, SJ can have negative Q...  will have to return to that
+        # later.  FIX.
+        Q=max(0,Qfunc(t))
+        
+        # g/m3 * m3/s * s/hr / (particles/hour)
+        # => g/particle
+        particles['mass'][new_ids]=weight*Q*3600/grp_rel_per_hour
         
         if (t-t0>=spinup) and (t>=time_range[0]):
             # at this point only filter on age.
@@ -269,6 +286,7 @@ def scan_group(self,group,time_range,z_range=None,grid=None,
             ret['rel_time']=particles['rel_time'][parts['id'][sel]]
             ret['obs_time']=t
             ret['grp_rel_per_hour']=particles['grp_rel_per_hour'][parts['id'][sel]]
+            ret['mass']=particles['mass'][parts['id'][sel]]
             ret_particles.append(ret)
         else:
             # already done the bookkeeping, but too early to actually output
@@ -279,7 +297,8 @@ def scan_group(self,group,time_range,z_range=None,grid=None,
                
 def query_runs(ptm_runs,group_patt,time_range,z_range=None,grid=None,
                max_age=np.timedelta64(30,'D'),
-               spinup=None):
+               spinup=None,
+               run_weights=None):
     """
     ptm_runs: List of PtmRun instancse
     groups: regular expression matching the group names of interest
@@ -289,9 +308,15 @@ def query_runs(ptm_runs,group_patt,time_range,z_range=None,grid=None,
     max_age: ignore particles older than this
     spinup: don't return particles within this interval of the
      start of the run, defaults to max_age.
+
+    run_weight: how to scale each of the runs.
     """
     if spinup is None:
         spinup=max_age
+
+    if run_weights is None:
+        # straight average.  not great if one run has higher release rate.
+        run_weights=np.ones(len(ptm_runs))/float(len(ptm_runs))
 
     # compile an array of particles that are
     #  (i) observed within the time_range, limited to output steps
@@ -317,21 +342,27 @@ def query_runs(ptm_runs,group_patt,time_range,z_range=None,grid=None,
         for group in run.groups():
             if re.match(group_patt,group) is None:
                 continue
+            log.info(f"{run.run_dir:30s}: {group}")
             part_obs=scan_group(run,group,time_range=time_range,z_range=z_range,
-                                grid=grid, extra_fields=[('run_idx',np.int32),
-                                                         ('mass',np.float64)])
+                                weight=run_weights[run_idx],
+                                grid=grid, extra_fields=[('run_idx',np.int32)])
             part_obs['run_idx']=run_idx
+            
             all_part_obs.append(part_obs)
-    return np.concatenate(all_part_obs)
+    result=np.concatenate(all_part_obs)
+    assert np.isnan(result['grp_rel_per_hour']).sum()==0
+    return result
         
 part_obs=query_runs(ptm_runs,
                     group_patt='.*_up2000',
-                    time_range=[np.datetime64("2017-07-20 00:00"),
-                                np.datetime64("2017-07-20 01:00")],
+                    time_range=[np.datetime64("2017-07-30 00:00"),
+                                np.datetime64("2017-07-30 01:00")],
                     z_range=None, # not ready
+                    max_age=np.timedelta64(50,'D'),
                     grid=grid)
 
 ##
+
 # that returned 4.8M points.  with output for a single time step
 # via time_range, that becomes 41k.
 # 18 groups.
@@ -339,22 +370,37 @@ part_obs=query_runs(ptm_runs,
 # 30 days*24 hr/day * 5 particles/grp/hr *18 grps
 # but time range includes 5 days,
 
-
-## 
-conc=particle_to_density(particles,grid)
-
-grid.plot_cells(values=conc)
-
-
 ## 
 
 plt.figure(1).clf()
 # plt.plot(part_obs['x'][:,0],part_obs['x'][:,1],'g.',ms=2)
 age_secs=(part_obs['obs_time']-part_obs['rel_time'])/np.timedelta64(1,'s')
-scat=plt.scatter(part_obs['x'][:,0],part_obs['x'][:,1],10,age_secs/86400.,
-                 cmap='jet')
+if 0: # scale by mass, color by age
+    scat=plt.scatter(part_obs['x'][:,0],part_obs['x'][:,1],
+                     part_obs['mass']/2e4,
+                     age_secs/86400.,
+                     cmap='jet')
+if 1: # color by log(mass)
+    scat=plt.scatter(part_obs['x'][:,0],part_obs['x'][:,1],
+                     10,
+                     np.log(part_obs['mass'].clip(100,np.inf)),
+                     cmap='jet')
+
 grid.plot_edges(lw=0.5,color='k',zorder=-1)
 plt.axis('equal')
 plt.colorbar(scat,label='Age (days)')
+
+##
+
+
+# next up:
+#  allow for specifying different concentrations per source, group.
+#  then can dial down Delta.
+
+##
+
+conc=particle_to_density(particles,grid)
+
+grid.plot_cells(values=conc)
 
 ##
