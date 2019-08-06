@@ -7,9 +7,12 @@ six.moves.reload_module(ptm_config)
 import numpy as np
 
 ## 
+
+# this run doesn't yet exist on cws-linuxmodeling
+model=sun_driver.SuntansModel.load("/opt2/sfb_ocean/suntans/runs/merge_017-201706")
 # model=sun_driver.SuntansModel.load("/opt2/sfb_ocean/suntans/runs/merge_009-20171201")
-#model=sun_driver.SuntansModel.load("/media/rusty/Seagate Portable Drive/cws-linuxmodeling/sfb_ocean/suntans/runs/merge_016-201706")
-model=sun_driver.SuntansModel.load("/media/rusty/80c8a8ec-71d2-4687-aa6b-41c23f557be8/sfb_ocean/suntans/runs/merge_009-20170801")
+# mounting cws-linuxmodeling hard drive externally
+# model=sun_driver.SuntansModel.load("/media/rusty/80c8a8ec-71d2-4687-aa6b-41c23f557be8/sfb_ocean/suntans/runs/merge_009-20170801")
 model.load_bc_ds()
 
 ##
@@ -76,13 +79,14 @@ YYYY-MM-DD HH:MM:SS      DISTANCE SPEED  DISTANCE   SPEED
 2030-01-01 00:00:00        0.500   0.000   0.6      {w_mps:.6f}
 2030-01-01 01:00:00        0.500   0.000   0.6      {w_mps:.6f}"""
                          .format(dist_option=dist_option,w_mps=w_mps) )
-
+            
     def add_output_sets(self):
+        # when doing sediment particles, may want that state output,
+        # but otherwise could probably set to 'none'
         self.lines+=["""\
 OUTPUT INFORMATION 
    NOUTPUT_SETS = 1
 
-   -- output set 3 --- production
    OUTPUT_SET = '60min_output'
    FLAG_LOG_LOGICAL = 'true'
    BINARY_OUTPUT_INTERVAL_HOURS = 1.0
@@ -92,9 +96,9 @@ OUTPUT INFORMATION
    CONCENTRATION_OUTPUT_INTERVAL_HOURS = 24.0
    REGION_COUNT_OUTPUT_INTERVAL_HOURS = 24.
    REGION_COUNT_UPDATE_INTERVAL_HOURS = 24.
-   STATE_OUTPUT_INTERVAL_HOURS = 'none'
+   STATE_OUTPUT_INTERVAL_HOURS = 1.0
 """]
-
+        
     def add_release_timing(self):
         self.lines+=[f"""\
 RELEASE TIMING INFORMATION
@@ -114,21 +118,27 @@ cfg=Config()
 
 #cfg.rel_time=model.run_start+5*24*np.timedelta64(1,'h')
 cfg.rel_time=np.datetime64("2017-06-15")  # Allow some spinup
+
 # 1 day while testing:
 # cfg.end_time=cfg.rel_time + np.timedelta64(86400,'s')
 cfg.end_time=np.datetime64("2017-08-15")
+
+# or the whole hydro
 #cfg.end_time = model.run_stop - np.timedelta64(3600,'s')
 
 # cfg.run_dir="ptm_20000" # all sources, 3 behaviors, 24 hours
 # cfg.run_dir='ebmud_all_w' # actually ebda, and the full slate of w_s, for june 2017.
 # cfg.run_dir="napa_select_w"
 # cfg.run_dir='ebda_most_w_dec' # parallel run starting in June, most behaviors, ebda release.
+# cfg.run_dir='compare_sediment' # 3 behaviors at each source, 100 particles/hour
+
+# 5 is for pretty small runs.
+particles_per_interval=5
+
 # cfg.run_dir='all_source_select_w' # 3 behaviors at each source.
 cfg.run_dir='all_source_select_w_const' # constant # particles / hr
 
 # add releases
-particles_per_release=5 # testing with minimal #
-
 for seg_idx in range(len(model.bc_ds.Nseg)):
     flow_name=model.bc_ds.seg_name.values[seg_idx]
     print("Adding segment flow %s"%flow_name)
@@ -138,7 +148,6 @@ for seg_idx in range(len(model.bc_ds.Nseg)):
     edges=model.bc_ds.edgep.values[type2s]
     flow_xy=model.grid.edges_center()[edges]
 
-    # flow-based at boundary edge
     release=[f"""\
    RELEASE_DISTRIBUTION_SET = '{flow_name}' 
    MIN_BED_ELEVATION_METERS = -99.
@@ -153,7 +162,7 @@ for seg_idx in range(len(model.bc_ds.Nseg)):
     release+=[f"""\
    NPARTICLE_ASSIGNMENT = 'specify'
      TIME_VARIABLE_RELEASE = 'false'
-     NPARTICLES_PER_RELEASE_INTERVAL = {particles_per_release}
+     NPARTICLES_PER_RELEASE_INTERVAL = {particles_per_interval}
      AVERAGE_NPARTICLES_IN_VERTICAL = 1
      DISTRIBUTION_AMONG_WATER_COLUMNS = 'depth_weighted'
    ZMIN_NON_DIM = 0.0
@@ -174,7 +183,7 @@ for Npoint in range(len(model.bc_ds.Npoint)):
     pnt=cc[cell]
 
     pnt_release=[
-            f"""\
+        f"""\
          RELEASE_DISTRIBUTION_SET = '{name}' 
          MIN_BED_ELEVATION_METERS = -99.
          MAX_BED_ELEVATION_METERS =  99. 
@@ -185,9 +194,9 @@ for Npoint in range(len(model.bc_ds.Npoint)):
             YEND   = {pnt[1]:.6f}
             NPARTICLE_ASSIGNMENT = 'specify'
               TIME_VARIABLE_RELEASE = 'false'
-              NPARTICLES_PER_RELEASE_INTERVAL = {particles_per_release}
+              NPARTICLES_PER_RELEASE_INTERVAL = {particles_per_interval}
               -- average number of particles per water column
-              AVERAGE_NPARTICLES_IN_VERTICAL = {particles_per_release}
+              AVERAGE_NPARTICLES_IN_VERTICAL = {particles_per_interval}
               -- method of setting the number of particles released in water column
               DISTRIBUTION_AMONG_WATER_COLUMNS = 'uniform'
          ZMIN_NON_DIM = 0.3

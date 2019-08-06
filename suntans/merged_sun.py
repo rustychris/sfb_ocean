@@ -55,9 +55,9 @@ else:
     # For manually running the script.
     # args=parser.parse_args(["-g","grid-connectivity.nc"])
     # args=parser.parse_args(["-s","2017-06-01","-e","2017-06-05","-d","test-met5-KtoC"])
-    args=parser.parse_args(["-r","/opt2/sfb_ocean/suntans/runs/merge_009-20170801/",
-                            "-e","2017-10-01T12:00:00",
-                            "-d","/opt2/sfb_ocean/suntans/runs/merge_009-20170901"])
+    args=parser.parse_args(["-s","2017-06-01T00:00:00",
+                            "-e","2017-07-01T12:00:00",
+                            "-d","/opt2/sfb_ocean/suntans/runs/merge_016-20170601"])
     #raise Exception("Update args")
 
 ##
@@ -86,11 +86,12 @@ if not args.resume:
     model.num_procs=16
     model.load_template("sun-template.dat")
 
-    model.config['Nkmax']=50
+    model.config['Nkmax']=60
     model.config['stairstep']=1
     model.dredge_depth=-2 + z_offset_manual # 2m below the offset of -5m.
 
-    dt_secs=5.0
+    # 2019-07-03: trying 20 - hold on tight!
+    dt_secs=20.0
     model.config['dt']=dt_secs
     # had been ramping at 86400, but don't linger so much...
     model.config['thetaramptime']=43200
@@ -100,7 +101,8 @@ if not args.resume:
     model.config['ntoutStore']=int(86400/dt_secs) # daily
     model.config['calcaverage']=1
     model.config['averageNetcdfFile']="average.nc"
-    # 40 days per average file - keep each month in a file.
+
+    # 40 days per average file (i.e. one per month)
     model.config['nstepsperncfile']=int( 40*86400/(int(model.config['ntaverage'])*dt_secs) )
     model.config['mergeArrays']=1
     model.config['metmodel']=5 # wind, temperature nudging
@@ -132,29 +134,34 @@ if not args.resume:
     grid=unstructured_grid.UnstructuredGrid.from_ugrid(dest_grid)
     # older iterations called bed elevation 'depth', but now I want to call it
     # z_bed
+
     try:
         grid.cells['z_bed']
     except ValueError:
-        grid.add_cell_field('z_bed',grid.cells['depth'])
-
-    edge_fields=grid.edges.dtype.names
-    if ('edge_z_bed' not in edge_fields) and ('edge_depth' in edge_fields):
-        grid.add_edge_field('edge_z_bed',grid.edges['edge_depth'])
-        edge_fields=grid.edges.dtype.names
-
-    # which are modified before giving to the model
-    grid.cells['z_bed'] += z_offset_manual
-
-    if 'edge_z_bed' in edge_fields:
-        grid.edges['edge_z_bed'] += z_offset_manual
+        raise Exception("Now requiring grid to come in with cell z_bed field")
+    
+    if 'edge_z_bed' in grid.edges.dtype.names:
+        log.info("Grid came in with edge depths")
     else:
-        log.warning("No edge depths")
+        ec=grid.edge_to_cells().copy()
+        nc1=ec[:,0]
+        nc2=ec[:,1]
+        nc1[nc1<0]=nc2[nc1<0] ; nc2[nc2<0]=nc1[nc2<0]
+        edge_z=np.maximum( grid.cells['z_bed'][nc1],
+                           grid.cells['z_bed'][nc2] )
+        grid.add_edge_field('edge_z_bed',edge_z)
+    # make sure edge depths actually were included, not just a bunch of zeros.
+    assert grid.edges['edge_z_bed'].min()<0.0,"Looks like edge depths were not set on %s"%dest_grid
+    
+    # Apply offset before handing to model instance.
+    grid.cells['z_bed'] += z_offset_manual
+    grid.edges['edge_z_bed'] += z_offset_manual
         
     model.set_grid(grid)
 
     # make sure edge depths actually were included
-    #edge_z=model.grid.edges['edge_z_bed']
-    #assert edge_z.min()<0.0,"Looks like edge depths were not set on %s"%dest_grid
+    edge_z=model.grid.edges['edge_z_bed']
+    assert edge_z.min()<0.0,"Looks like edge depths were not set on %s"%dest_grid
 else:
     old_model=drv.SuntansModel.load(args.resume)
     model=old_model.create_restart(symlink=True)
@@ -281,7 +288,29 @@ if 1:
     assert min_Tair>=0.0,"Maybe bad K->C conversion"
     assert np.isfinite(min_Tair),"Bad values in Tair"
     model.config['metmodel']=5 # nudge
+## 
 
+if 1:
+    # update x_rain, y_rain
+    x1,x2,y1,y2=model.grid.bounds()
+
+    for v in ['rain','x_rain','y_rain','z_rain','Nrain']:
+        if v in model.met_ds:
+            del model.met_ds[v]
+
+    pnts=np.array( [ [x1,y1],
+                     [x1,y2],
+                     [x2,y2],
+                     [x2,y1] ] )
+    model.met_ds['x_rain']=('Nrain',), pnts[:,0]
+    model.met_ds['y_rain']=('Nrain',), pnts[:,1]
+    model.met_ds['z_rain']=('Nrain',), 0*pnts[:,0]
+    rain=np.zeros( (model.met_ds.dims['nt'],
+                    model.met_ds.dims['Nrain']), np.float64)
+    # test with constant 150mm/month evaporation
+    rain[:,:] = -5.8e-8
+    model.met_ds['rain']=('nt','Nrain'), rain
+    
 ##
 def set_ic(model):
     # Start with USGS Polaris 
@@ -304,8 +333,22 @@ def set_ic(model):
         import hycom_ic
         hycom_ic.set_ic_from_hycom(model,hycom_ll_box,cache_dir,default_s=None,default_T=None)
 
-    if 1: # set freesurface
+    if 0: # set freesurface - skip if using Ocean-north-shore and Ocean-south-shore, this
         model.ic_ds.eta.isel(time=0).values[...]=z_offset_manual+msl_navd88
+
+    if 1: # include roughness
+        if 'z0B' in model.grid.edges.dtype.names:
+            edge_z0B=model.grid.edges['z0B'].reshape([1,-1])
+        else:
+            # depth-based
+            edge_z_bed=model.grid.edges['edge_z_bed']
+            edge_z0B=np.interp(edge_z_bed,
+                               z_offset_manual +
+                               np.array([ -20, -10,   -5,   -3,   0]),
+                               np.array([1e-5,1e-4,0.001,0.005,0.01]))
+            edge_z0B=edge_z0B.reshape([1,-1])
+        log.info('Writing roughness to initial condition')
+        model.ic_ds['z0B']=('time','Ne'),edge_z0B
 
 if __name__=='__main__':
     if args.write_grid:
