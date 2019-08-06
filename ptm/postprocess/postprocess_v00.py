@@ -17,7 +17,6 @@ log.basicConfig(level=log.INFO)
 
 log.root.setLevel(log.INFO)
 
-
 import re
 import matplotlib.pyplot as plt
 
@@ -298,6 +297,7 @@ def scan_group(self,group,time_range,z_range=None,grid=None,
 def query_runs(ptm_runs,group_patt,time_range,z_range=None,grid=None,
                max_age=np.timedelta64(30,'D'),
                spinup=None,
+               conc_func=lambda group,source,behavior: 1.0,
                run_weights=None):
     """
     ptm_runs: List of PtmRun instancse
@@ -309,7 +309,12 @@ def query_runs(ptm_runs,group_patt,time_range,z_range=None,grid=None,
     spinup: don't return particles within this interval of the
      start of the run, defaults to max_age.
 
-    run_weight: how to scale each of the runs.
+    conc_func: the concentration from each group.
+
+    run_weights: list of factors, probably should sum to 1.0,
+      determines how to scale each of the runs.  defaults to average.  that's
+      not great if one run had a much larger particles_per_release.
+      then again, currently particles_per_release is assumed!
     """
     if spinup is None:
         spinup=max_age
@@ -343,8 +348,12 @@ def query_runs(ptm_runs,group_patt,time_range,z_range=None,grid=None,
             if re.match(group_patt,group) is None:
                 continue
             log.info(f"{run.run_dir:30s}: {group}")
+
+            src_name,behavior_name=run.group_to_src_behavior(group)
+            conc=conc_func(group,src_name,behavior_name)
+            
             part_obs=scan_group(run,group,time_range=time_range,z_range=z_range,
-                                weight=run_weights[run_idx],
+                                weight=conc*run_weights[run_idx],
                                 grid=grid, extra_fields=[('run_idx',np.int32)])
             part_obs['run_idx']=run_idx
             
@@ -352,16 +361,24 @@ def query_runs(ptm_runs,group_patt,time_range,z_range=None,grid=None,
     result=np.concatenate(all_part_obs)
     assert np.isnan(result['grp_rel_per_hour']).sum()==0
     return result
-        
+
+
+def conc_func(group,src,behavior):
+    if src in ['SacRiver','SJRiver']:
+        print(f"Got {src} -- returning 0.001")
+        return 0.001
+    else:
+        return 1.0
+
+# A 1 hour window gives 27k particles
 part_obs=query_runs(ptm_runs,
                     group_patt='.*_up2000',
                     time_range=[np.datetime64("2017-07-30 00:00"),
-                                np.datetime64("2017-07-30 01:00")],
+                                np.datetime64("2017-07-30 13:00")],
                     z_range=None, # not ready
                     max_age=np.timedelta64(50,'D'),
+                    conc_func=conc_func,
                     grid=grid)
-
-##
 
 # that returned 4.8M points.  with output for a single time step
 # via time_range, that becomes 41k.
@@ -371,36 +388,75 @@ part_obs=query_runs(ptm_runs,
 # but time range includes 5 days,
 
 ## 
+particles=part_obs
+
+def particle_to_density(particles,grid,normalize='area'):
+    """
+    particles: struct array with 'x' and 'mass'
+    normalize: 'area' normalize by cell areas to get a mass/area
+               'volume': Not implemented yet.
+    """
+
+    mass=np.zeros(grid.Ncells(),np.float64)
+
+    for i in utils.progress(range(len(particles))):
+        cell=grid.select_cells_nearest( particles['x'][i,:2] )
+        if cell is None: continue
+        mass[cell] += particles['mass'][i]
+
+    if normalize=='area':
+        mass/=grid.cells_area()
+    elif normalize=='mass':
+        pass
+    else:
+        raise Exception(f"Not ready for normalize={normalize}")
+    return mass
+
+conc0=particle_to_density(particles,grid,normalize='area')
+
+##
+
+M=grid.smooth_matrix(f=0.5,dx='grid',A='grid',V='grid',K='scaled')
+
+## 
+conc=conc0
+for _ in range(20):
+    conc=M.dot(conc)
+
+##
 
 plt.figure(1).clf()
-# plt.plot(part_obs['x'][:,0],part_obs['x'][:,1],'g.',ms=2)
+fig,axs=plt.subplots(1,2,sharex=True,sharey=True,num=1)
+
+ax=axs[0]
 age_secs=(part_obs['obs_time']-part_obs['rel_time'])/np.timedelta64(1,'s')
 if 0: # scale by mass, color by age
-    scat=plt.scatter(part_obs['x'][:,0],part_obs['x'][:,1],
-                     part_obs['mass']/2e4,
-                     age_secs/86400.,
-                     cmap='jet')
+    scat=ax.scatter(part_obs['x'][:,0],part_obs['x'][:,1],
+                    part_obs['mass']/2e4,
+                    age_secs/86400.,
+                    cmap='jet')
+    label='Age (days)'
 if 1: # color by log(mass)
-    scat=plt.scatter(part_obs['x'][:,0],part_obs['x'][:,1],
-                     10,
-                     np.log(part_obs['mass'].clip(100,np.inf)),
-                     cmap='jet')
+    scat=ax.scatter(part_obs['x'][:,0],part_obs['x'][:,1],
+                    10,
+                    np.log(part_obs['mass'].clip(100,np.inf)),
+                    cmap='jet')
+    label='log(mass)'
+grid.plot_edges(lw=0.5,color='k',zorder=-1,ax=ax)
 
-grid.plot_edges(lw=0.5,color='k',zorder=-1)
-plt.axis('equal')
-plt.colorbar(scat,label='Age (days)')
+plt.colorbar(scat,label=label,ax=ax)
+
+ax=axs[1]
+
+from matplotlib import colors
+
+ccoll=grid.plot_cells(values=conc.clip(1e-5,np.inf),ax=ax,lw=0.5,cmap='jet',
+                      norm=colors.LogNorm(vmin=1e-5,vmax=1,clip=True))
+ccoll.set_edgecolor('face')
+
+plt.colorbar(ccoll,label='Conc',ax=ax)
+
+# plt.setp(axs,aspect='equal')
 
 ##
-
-
-# next up:
-#  allow for specifying different concentrations per source, group.
-#  then can dial down Delta.
-
-##
-
-conc=particle_to_density(particles,grid)
-
-grid.plot_cells(values=conc)
-
-##
+    
