@@ -77,3 +77,4 @@ while run_start < series_end:
 
     # my stop is your start
     run_start=run_stop
+    previous_run_dir=run_dir

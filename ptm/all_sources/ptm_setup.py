@@ -9,7 +9,9 @@ import numpy as np
 ## 
 
 # this run doesn't yet exist on cws-linuxmodeling
-model=sun_driver.SuntansModel.load("/opt2/sfb_ocean/suntans/runs/merge_017-201706")
+# model=sun_driver.SuntansModel.load("/opt2/sfb_ocean/suntans/runs/merge_017-201706")
+# as far as ec2 has gotten:
+model=sun_driver.SuntansModel.load("/shared2/src/sfb_ocean/suntans/runs/merged_018_20170809")
 # model=sun_driver.SuntansModel.load("/opt2/sfb_ocean/suntans/runs/merge_009-20171201")
 # mounting cws-linuxmodeling hard drive externally
 # model=sun_driver.SuntansModel.load("/media/rusty/80c8a8ec-71d2-4687-aa6b-41c23f557be8/sfb_ocean/suntans/runs/merge_009-20170801")
@@ -133,10 +135,11 @@ cfg.end_time=np.datetime64("2017-08-15")
 # cfg.run_dir='compare_sediment' # 3 behaviors at each source, 100 particles/hour
 
 # 5 is for pretty small runs.
-particles_per_interval=5
+# try 10 for now on aws
+particles_per_interval=10
 
 # cfg.run_dir='all_source_select_w' # 3 behaviors at each source.
-cfg.run_dir='all_source_select_w_const' # constant # particles / hr
+cfg.run_dir='all_source_select_w_const_20170615' # constant # particles / hr
 
 # add releases
 for seg_idx in range(len(model.bc_ds.Nseg)):
