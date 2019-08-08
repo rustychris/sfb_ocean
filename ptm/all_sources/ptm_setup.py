@@ -25,10 +25,15 @@ class Config(ptm_config.PtmConfig):
     #                   0,
     #                   -0.06,-0.02,-0.006,-0.002,-0.0006]
     # slim that down some
-    rising_speeds_mps=[0.002,0,-0.002]
-    #rising_speeds_mps=[0.06,0.006,0.0006,
+    # rising_speeds_mps=[0.002,0,-0.002]
+
+    # too many groups to do them all at once
+    #rising_speeds_mps=[0.05,0.005,0.0005,
     #                   0,
-    #                   -0.06,-0.006,-0.0006]
+    #                   -0.05,-0.005,-0.0005]
+
+    rising_speeds_mps=None # filled in below
+    
     @property
     def behavior_names(self):
         names=[]
@@ -85,20 +90,23 @@ YYYY-MM-DD HH:MM:SS      DISTANCE SPEED  DISTANCE   SPEED
     def add_output_sets(self):
         # when doing sediment particles, may want that state output,
         # but otherwise could probably set to 'none'
+        # note that to turn state output on, need not just the interval
+        # but then also something about number of variables output and
+        # the list of variables
         self.lines+=["""\
 OUTPUT INFORMATION 
    NOUTPUT_SETS = 1
 
    OUTPUT_SET = '60min_output'
-   FLAG_LOG_LOGICAL = 'true'
+   FLAG_LOG_LOGICAL = 'false'
    BINARY_OUTPUT_INTERVAL_HOURS = 1.0
    ASCII_OUTPUT_INTERVAL_HOURS = 'none' 
    HISTOGRAM_OUTPUT_INTERVAL_HOURS = 'none'
-   STATISTICS_OUTPUT_INTERVAL_HOURS = 24
-   CONCENTRATION_OUTPUT_INTERVAL_HOURS = 24.0
-   REGION_COUNT_OUTPUT_INTERVAL_HOURS = 24.
-   REGION_COUNT_UPDATE_INTERVAL_HOURS = 24.
-   STATE_OUTPUT_INTERVAL_HOURS = 1.0
+   STATISTICS_OUTPUT_INTERVAL_HOURS = 'none'
+   CONCENTRATION_OUTPUT_INTERVAL_HOURS = 'none'
+   REGION_COUNT_OUTPUT_INTERVAL_HOURS = 'none'
+   REGION_COUNT_UPDATE_INTERVAL_HOURS = 'none'
+   STATE_OUTPUT_INTERVAL_HOURS = 'none'
 """]
         
     def add_release_timing(self):
@@ -113,6 +121,29 @@ RELEASE TIMING INFORMATION
        RELEASE_INTERVAL_HOURS = 1.0
      INACTIVATION_TIME = 'none'"""
           ]
+        
+    def method_text(self):
+        # bumping up the horizontal diffusivity to 0.5 m2/s
+        return """\
+ MAX_HORIZONTAL_ADVECTION_SUBSTEPS = 10
+ MAX_HORIZONTAL_DIFFUSION_SUBSTEPS = 10
+ GRID_TYPE = 'unstructured'
+ ADVECTION_METHOD = 'streamline'
+   NORMAL_VELOCITY_GRADIENT = 'constant'
+ VERT_COORD_TYPE = 'z-level'
+ HORIZONTAL_DIFFUSION_METHOD = 'constant'
+   CONSTANT_HORIZONTAL_EDDY_DIFFUSIVITY = 0.5
+ VERTICAL_ADVECTION_METHOD = 'streamline'
+ MIN_VERTICAL_EDDY_DIFFUSIVITY = 0.00001
+ MAX_VERTICAL_EDDY_DIFFUSIVITY = 0.10000
+ MAX_VERTICAL_DIFFUSION_SUBSTEPS = 100
+ MIN_VERTICAL_DIFFUSION_TIME_STEP = 1.0
+ RANDOM_NUMBER_DISTRIBUTION = 'normal'
+ SPECIFY_RANDOM_SEED = 'true'
+   SPECIFIED_RANDOM_SEED = 1
+ REMOVE_DEAD_PARTICLES = 'false'
+ SUBGRID_BATHY = 'false'
+"""
 
         
                 
@@ -138,7 +169,13 @@ cfg.end_time=np.datetime64("2017-08-15")
 particles_per_interval=5
 
 # cfg.run_dir='all_source_select_w' # 3 behaviors at each source.
-cfg.run_dir='all_source_select_w_const_20170615' # constant # particles / hr
+
+
+# 0.05,0.005,0.0005, 0,
+# -0.05,-0.005,-0.0005
+
+cfg.rising_speeds_mps=[0.0005]
+cfg.run_dir='all_source_w0.0005_20170615'
 
 # add releases
 for seg_idx in range(len(model.bc_ds.Nseg)):
@@ -218,12 +255,12 @@ enable_sources=[
     'sunnyvale', 
     'san_jose', 
     'palo_alto', 
-    'lg', 
-    'sonoma_valley', 
+#    'lg', 
+#    'sonoma_valley', 
     'petaluma', 
     'cccsd', 
     'fs', 
-    'ddsd',
+#    'ddsd',
     'src000', # EBDA
     'src001', # EBMUD
     'src002'  # SFPUC
@@ -288,16 +325,3 @@ for mod in models:
 with open(os.path.join(cfg.run_dir,"FISH_PTM_hydrodynamics.inp"),'wt') as fp:
     fp.write(" NUM_FILES = %d\n"%file_count)
     fp.write("\n".join(lines))
-
-##       
-if 0:            
-    print("Running PTM")
-    if 'LD_LIBRARY_PATH' in os.environ:
-        del os.environ['LD_LIBRARY_PATH']
-    pwd=os.getcwd()
-    try:
-        os.chdir(cfg.run_dir)
-        subprocess.run(["/home/rusty/src/fish_ptm/PTM/FISH_PTM.exe"])
-    finally:
-        os.chdir(pwd)
-
