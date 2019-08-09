@@ -1,0 +1,53 @@
+Stormwater:
+  Probably just treat all stormwater the same?
+  Or is it not too hard to normalize the samples by relative flow?
+
+The stormwater inflows in the model are:
+  COYOTE
+  NAPA
+  SCLARAVCc (Guad River / Alviso Slough)
+  UALAMEDA (Alameda flood control)
+
+Stormwater measurements do not include Alameda Flood control or Napa, but do include
+a number of smaller creeks and sub-watersheds.
+
+Chapter has the sample volume (liters) per site.
+
+Estimate that 74% of particles are from industrial areas which in turn make
+up only 6% of the land area.
+
+Overall, 1.3 -- 30 particles/L observed.
+
+Report also gives coefficients for land type to particle count.
+i.e. a watershed that's 100% industrial is estimated to have 62 particles/L,
+but if it's 60% industrial 40% residential, then it would be 0.60*62 + 0.40*1.0.
+There is an assumption in there that flow and particle count scale in the same
+way with watershed area.  Fine.
+
+SFEI does put some 2005 ABAG land-use GIS data online.  That includes polygon layers
+with a Land_use_classification field, that is similar but a bit finer than the
+report.  It has Agriculture, Commercial - {high,low}, Industrial, Null, Open( - compacted)?
+Residential - {high,low,med,rural}, Transportation, Water, Water - runoff, other.
+
+
+
+
+Wastewater inflows in the model are:
+  cccsd
+  ddsd
+  fs
+  lg
+  palo_alto
+  petaluma (could also be used for a stormwater input?)
+  san_jose
+  sonoma_valley
+  src000 (EBDA)
+  src001 (EBMUD)
+  src002 (SFPUC)
+  sunnyvale
+
+Delta inputs:
+  Sacriver 
+  SJRiver
+
+
