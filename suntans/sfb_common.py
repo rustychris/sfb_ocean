@@ -6,7 +6,7 @@ import logging as log
 from stompy.io.local import usgs_nwis
 import stompy.model.delft.dflow_model as dfm
 import stompy.model.suntans.sun_driver as drv
-
+from stompy.spatial import wkb2shp
 
 def add_delta_bcs(model,cache_dir):
     # Delta inflow
@@ -126,6 +126,7 @@ def add_scaled_streamflow(model,
     all_gages=np.unique( np.concatenate( [gages.split('|') for gages in flow_features['gages']] ) )
 
     usgs_gage_cache=os.path.join(cache_dir, 'usgs','streamflow')
+    os.path.exists(usgs_gage_cache) or os.makedirs(usgs_gage_cache)
     
     flows_ds=usgs_nwis.nwis_dataset_collection(all_gages,
                                                start_date=run_start-5*DAY,
@@ -135,7 +136,7 @@ def add_scaled_streamflow(model,
                                                frequency='daily', # time resolution of the data
                                                cache_dir=usgs_gage_cache)
 
-    usgs_inventory=wkb2shp.shp2geom(usgs_inventory_shp_fn)
+    usgs_inventory=wkb2shp.shp2geom(usgs_inventory_shp)
     station_to_area=dict( [ ("%d"%site, area)
                             for site,area
                             in zip(usgs_inventory['site_no'],
@@ -180,7 +181,7 @@ def add_scaled_streamflow(model,
                                                                                       stn_ds.time.values[-1]))
         if np.any(missing):
             missing_frac=np.sum(missing)/len(missing)
-            logging.warning("Composite from gages %s has missing data (%.1f%%) in period %s - %s"%(gages,
+            log.warning("Composite from gages %s has missing data (%.1f%%) in period %s - %s"%(gages,
                                                                                                    100*missing_frac,
                                                                                                    stn_ds.time.values[0],
                                                                                                    stn_ds.time.values[-1]))
@@ -198,7 +199,7 @@ def add_scaled_streamflow(model,
                 if test_name not in unique_names:
                     break
                 serial+=1
-            logging.warning("Source name %s duplicate - will use %s"%(src_name,test_name))
+            log.warning("Source name %s duplicate - will use %s"%(src_name,test_name))
             src_name=test_name
 
         unique_names[src_name]=src_name
@@ -206,7 +207,7 @@ def add_scaled_streamflow(model,
         flow_bc=model.FlowBC(name=src_name,
                              geom=feat['geom'],
                              Q=stn_ds.flow_cms)
-        salt_bc=model.ScalarBC(parent=flow_bc,salinity=0.0)
-        temp_bc=model.ScalarBC(parent=flow_bc,temperature=20.0)
+        salt_bc=model.ScalarBC(parent=flow_bc,scalar='salinity',value=0.0)
+        temp_bc=model.ScalarBC(parent=flow_bc,scalar='temperature',value=20.0)
         
         model.add_bcs([flow_bc,salt_bc,temp_bc])
