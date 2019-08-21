@@ -2,6 +2,7 @@ import numpy as np
 import xarray as xr
 import os
 import logging as log
+import local_config
 
 from stompy.io.local import usgs_nwis
 import stompy.model.delft.dflow_model as dfm
@@ -211,3 +212,76 @@ def add_scaled_streamflow(model,
         temp_bc=model.ScalarBC(parent=flow_bc,scalar='temperature',value=20.0)
         
         model.add_bcs([flow_bc,salt_bc,temp_bc])
+
+
+##
+
+def cimis_net_precip(cache_dir='cache'):
+    """
+    Load daily precip-Eto data.  Includes the recipe for derviation,
+    but the data file is in git, so generally shouldn't have to 
+    regenerate.
+    """
+    nc_fn=os.path.join(os.path.dirname(__file__),
+                       'cimis-net_precip-2016_2018.nc')
+    if not os.path.exists(nc_fn):
+        from stompy.io.local import cimis
+        # CIMIS processing.
+        # unfortunately 171 is missing the most important chunk of data for 2017,
+        # so have to piece together data from other years.
+        station=171
+
+        # fetch several years and do some filling.
+        cache_dir='cache'
+        union_city=cimis.cimis_fetch_to_xr(station,
+                                           np.datetime64("2016-01-01"),
+                                           np.datetime64("2019-01-01"),
+                                           cache_dir=cache_dir,
+                                           cimis_key=local_config.cimis_key)
+
+        # Assume a crop coefficient of 1.0.
+        # Some sources suggest that Eto is actually very close to
+        # open water evaporation.
+        # http://www.fao.org/3/X0490E/x0490e0b.htm#crop%20coefficients
+        #  notes that it depends on whether the water body is absorbing
+        #  heat (Kc<1.0) or giving off heat (Kc>1.0)
+        # punt and say 1.0
+        union_city['net_rain']=union_city.HlyPrecip - 1.0 * union_city.HlyEto
+
+
+        # Daily average
+        df=union_city['net_rain'].to_dataframe()
+        df_daily=df.resample('D').mean() # keep it as mm/hr.
+
+        df_back=df_daily.copy()
+        df_back.index=df_back.index + np.timedelta64(365,'D')
+
+        df_fwd=df_daily.copy()
+        df_fwd.index=df_fwd.index - np.timedelta64(365,'D')
+
+        df_daily_merge=pd.merge( df_daily,df_back,
+                                 left_index=True, right_index=True,
+                                 how='left',suffixes=['','_back'])
+        df_daily_merge=pd.merge( df_daily_merge,df_fwd,
+                                 left_index=True, right_index=True,
+                                 how='left',suffixes=['','_fwd'])
+
+        df_daily_merge['net_rain_fill']=df_daily_merge['net_rain'].copy()
+        missing=df_daily_merge['net_rain_fill'].isnull()
+        df_daily_merge.loc[missing,'net_rain_fill'] = df_daily_merge.loc[missing,'net_rain_back']
+
+        ds=xr.Dataset.from_dataframe(df_daily_merge)
+        del ds['net_rain']
+        del ds['net_rain_back']
+        del ds['net_rain_fwd']
+
+        ds=ds.rename(net_rain_fill='net_rain')
+        ds['net_rain'].attrs['unit']='mm hr-1'
+        ds['net_rain'].attrs['description']="""Precip - Eto for CIMIS #171. Summer 2017 filled 
+        with Summer 2016 as needed.  Daily average derived from hourly data"""
+        ds.to_netcdf(nc_fn)
+        ds.close()
+        
+    return xr.open_dataset(nc_fn)
+##
+
