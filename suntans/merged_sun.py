@@ -250,7 +250,21 @@ model.add_bcs(ocean_bcs)
 
 import sfb_common
 sfb_common.add_delta_bcs(model,cache_dir)
-sfb_common.add_usgs_stream_bcs(model,cache_dir)  # disable if no internet
+if 0:
+    sfb_common.add_usgs_stream_bcs(model,cache_dir)  # disable if no internet
+else:
+    # HERE
+    #  1. done - copied watershed shapefile into per-grid folder
+    #  2. done - edit watershed shapefile to match up with merge-suisun grid
+    #  3. Update sfb_common.add_scaled_watersheds to use updated model
+    #     interface
+    #    for now, keep this shapefile separate from gazetteer, though it
+    flow_locations_shp=os.path.join(grid_dir,'watershed_inflow_locations.shp')
+    inventory_shp=os.path.join("../sfb_dfm_utils/usgs_inventory.shp")
+    sfb_common.add_scaled_streamflow(model,flow_locations_shp,inventory_shp,
+                                     cache_dir=cache_dir)
+
+    
 sfb_common.add_potw_bcs(model,cache_dir)
 
 
