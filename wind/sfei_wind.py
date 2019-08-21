@@ -281,7 +281,7 @@ if __name__=='__main__':
         outfileprefix = 'wind_natneighbor_201706'
         process_period(start_time_string,end_time_string,outfileprefix)
     if 1:
-        dates=pd.date_range("2017-06-01 00:00", "2018-07-01 00:00", freq='MS').to_pydatetime()
+        dates=pd.date_range("2017-06-01 00:00", "2018-08-01 00:00", freq='MS').to_pydatetime()
         
         for start,end in zip(dates[:-1], dates[1:]):
             process_period(start.strftime('%Y-%m-%d %H:%M'),
