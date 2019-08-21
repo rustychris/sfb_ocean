@@ -112,6 +112,8 @@ OUTPUT INFORMATION
 """]
         
     def add_release_timing(self):
+        print("Really should release a few more intervals")
+        # so that months overlap.
         self.lines+=[f"""\
 RELEASE TIMING INFORMATION
    NRELEASE_TIMING_SETS = 1

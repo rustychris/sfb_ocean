@@ -27,19 +27,18 @@ print(f"{len(model_dirs)} model directories, spanning {models_start_time} to {mo
 
 # Each run covers one release time and one settling velocity
 # these are odds then evens, to get the seasonal picture sooner.
-rel_times=[ np.datetime64("2017-06-15"),
-            np.datetime64("2017-07-15"),
-            np.datetime64("2017-09-15"),
-            np.datetime64("2017-11-15"),
-            np.datetime64("2018-01-15"),
-            np.datetime64("2018-03-15"),
-            np.datetime64("2018-05-15"),
-            
-            np.datetime64("2017-08-15"),
-            np.datetime64("2017-10-15"),
-            np.datetime64("2017-12-15"),
-            np.datetime64("2018-02-15"),
-            np.datetime64("2018-04-15"),
+rel_times=[ #np.datetime64("2017-06-15"),
+            #np.datetime64("2017-07-15"),
+            #np.datetime64("2017-09-15"),
+            # np.datetime64("2017-11-15"),
+            # np.datetime64("2018-01-15"),
+            # np.datetime64("2018-03-15"),
+            #np.datetime64("2017-10-15"),
+            np.datetime64("2018-05-15"), # now there is enough hydro to run this
+            #np.datetime64("2017-08-15"),
+            #np.datetime64("2018-04-15"),
+            #np.datetime64("2017-12-15"),
+            #np.datetime64("2018-02-15"), # in progress on ec2
             ]
 rising_speeds=[0.0005,-0.0005,0.005,-0.005,0.05,-0.05,0.0]
 
@@ -55,7 +54,7 @@ sources=[
     'palo_alto', 
     #    'lg', 
     #    'sonoma_valley', 
-    'petaluma', 
+    # 'petaluma', 
     'cccsd', 
     'fs', 
     #    'ddsd',
@@ -91,6 +90,13 @@ for rel_time in rel_times:
 
         cfg.set_releases()
         cfg.set_groups()
+
+        if os.path.exists(run_dir):
+            # This will probably need to get a better test, for when a run
+            # failed.
+            print(f"Second check - directory exists {run_dir}, will skip")
+            continue
+        
         cfg.clean()
         cfg.write()
         cfg.write_hydro()
