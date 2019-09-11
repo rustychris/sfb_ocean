@@ -11,7 +11,10 @@ import shutil
 from stompy.model.suntans import sun_driver
 from stompy import utils
 
-prefix="/shared2/src/sfb_ocean/suntans/runs/merged_018_"
+# 018: set of runs from EC2
+# 019: same config, locally run.
+# 020: time-varying data-based evaporation, and full set of freshwater inflows.
+prefix="/opt2/sfb_ocean/suntans/runs/merged_020_"
 
 series_start=np.datetime64('2017-06-10')
 series_end=np.datetime64('2018-07-01')

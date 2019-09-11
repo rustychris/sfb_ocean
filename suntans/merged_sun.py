@@ -321,8 +321,21 @@ if 1:
     model.met_ds['z_rain']=('Nrain',), 0*pnts[:,0]
     rain=np.zeros( (model.met_ds.dims['nt'],
                     model.met_ds.dims['Nrain']), np.float64)
-    # test with constant 150mm/month evaporation
-    rain[:,:] = -5.8e-8
+    if 0:
+        # test with constant 150mm/month evaporation
+        rain[:,:] = -5.8e-8
+    else:
+        # because of the need to do some filling, don't fetch this straight
+        # from cimis, but use the pre-processed data via sfb_common.
+        cimis=sfb_common.cimis_net_precip(cache_dir=cache_dir)
+        # deal with difference in time values
+        met_dn=utils.to_dnum(model.met_ds.nt.values)
+        rain_dn=utils.to_dnum(cimis.time.values)
+        rain_interp=np.interp(met_dn,rain_dn,cimis.net_rain.values)
+        rain[:,:]=rain_interp[:,None]
+        # convert mm/hr to m/s
+        rain *= 1. / 1000. / 3600.
+        # create rain data array.
     model.met_ds['rain']=('nt','Nrain'), rain
     
 ##
