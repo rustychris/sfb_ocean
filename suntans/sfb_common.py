@@ -136,17 +136,19 @@ def add_scaled_streamflow(model,
                                                days_per_request='M', # monthly chunks
                                                frequency='daily', # time resolution of the data
                                                cache_dir=usgs_gage_cache)
-
+    
     usgs_inventory=wkb2shp.shp2geom(usgs_inventory_shp)
     station_to_area=dict( [ ("%d"%site, area)
                             for site,area
                             in zip(usgs_inventory['site_no'],
                                    usgs_inventory['drain_area']) ] )
-
+    
     unique_names={}
     
     for feat_i,feat in enumerate(flow_features):
         gages=feat['gages'].split('|')
+        # in case any gages were dropped due to lacking data
+        gages=[g for g in gages if g in flows_ds.site.values]
         sub_flows=flows_ds.sel(site=gages)
 
         featA=feat['area_sq_mi']
