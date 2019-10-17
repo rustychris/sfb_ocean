@@ -16,6 +16,8 @@ class Config(ptm_config.PtmConfig):
     model=None # a HydroModel instance, chainable back
     model_dirs=None # if set, this will be used to get the list of models instead of
     # chaining restarts
+    model_dir=None # if set, and model is not set, this will be loaded and used to
+    # set model. useful for multiprocessing
     
     # positive: up, negative: down
     #rising_speeds_mps=[0.06,0.02,0.006,0.002,0.0006,
@@ -35,7 +37,13 @@ class Config(ptm_config.PtmConfig):
     rel_time=None # release time
     end_time=None # end of PTM run
     sources=None # list of source names to include
-    
+
+    def __init__(self,*a,**k):
+        super(Config,self).__init__(*a,**k)
+        if self.model is None and self.model_dir is not None:
+            self.model=sun_driver.SuntansModel.load(self.model_dir)
+            self.model.load_bc_ds() 
+
     @property
     def behavior_names(self):
         names=[]
@@ -74,6 +82,8 @@ BEHAVIOR INFORMATION
      BEHAVIOR_FILENAME = '{fname}'
 """.format(idx=b_idx+1,name=name,fname=fname)]
 
+            # 2019-10-12: change buffer region from 0.5/0.6
+            #  to 0.2/0.3
             with open(os.path.join(self.run_dir,fname),'wt') as fp:
                 fp.write("""\
  -- {w_mps} m/s
@@ -83,10 +93,10 @@ BEHAVIOR INFORMATION
  DISTANCE_OPTION = '{dist_option}'
                           LAYER_1         LAYER 2
 YYYY-MM-DD HH:MM:SS      DISTANCE SPEED  DISTANCE   SPEED
-1990-01-01 00:00:00        0.500   0.000   0.6      {w_mps:.6f}
-1990-01-01 01:00:00        0.500   0.000   0.6      {w_mps:.6f}
-2030-01-01 00:00:00        0.500   0.000   0.6      {w_mps:.6f}
-2030-01-01 01:00:00        0.500   0.000   0.6      {w_mps:.6f}"""
+1990-01-01 00:00:00        0.200   0.000   0.3      {w_mps:.6f}
+1990-01-01 01:00:00        0.200   0.000   0.3      {w_mps:.6f}
+2030-01-01 00:00:00        0.200   0.000   0.3      {w_mps:.6f}
+2030-01-01 01:00:00        0.200   0.000   0.3      {w_mps:.6f}"""
                          .format(dist_option=dist_option,w_mps=w_mps) )
             
     def add_output_sets(self):
@@ -303,8 +313,3 @@ RELEASE TIMING INFORMATION
         finally:
             os.chdir(pwd)
 
-        
-# 0.05,0.005,0.0005, 0,
-# -0.05,-0.005,-0.0005
-
-##

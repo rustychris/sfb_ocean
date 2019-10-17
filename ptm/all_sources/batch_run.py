@@ -10,7 +10,9 @@ import ptm_setup
 from stompy.model.suntans import sun_driver
 from stompy import utils
 
-ptm_avgs=glob.glob("/opt2/sfb_ocean/suntans/runs/merged_018_*/ptm_average.nc_0000.nc")
+#ptm_avgs=glob.glob("/opt2/sfb_ocean/suntans/runs/merged_018_*/ptm_average.nc_0000.nc")
+# 2019-10-12: switch to new runs with more freshwater inputs.
+ptm_avgs=glob.glob("/opt2/sfb_ocean/suntans/runs/merged_020_*/ptm_average.nc_0000.nc")
 ptm_avgs.sort()
 
 model_dirs=[os.path.dirname(fn) for fn in ptm_avgs]
@@ -34,7 +36,7 @@ rel_times=[ #np.datetime64("2017-06-15"),
             # np.datetime64("2018-01-15"),
             # np.datetime64("2018-03-15"),
             #np.datetime64("2017-10-15"),
-            np.datetime64("2018-05-15"), # now there is enough hydro to run this
+            #np.datetime64("2018-05-15"), # now there is enough hydro to run this
             #np.datetime64("2017-08-15"),
             #np.datetime64("2018-04-15"),
             #np.datetime64("2017-12-15"),
