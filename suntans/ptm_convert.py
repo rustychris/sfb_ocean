@@ -44,12 +44,12 @@ if __name__=="__main__":
 
     parser.add_argument("run_dirs",help="One or more run directories",nargs='+')
     parser.add_argument("-v", "--verbose",help="Increase verbosity",default=1,action='count')
-    parser.add_argument("-n","--n-processes",help="Run multiple conversions in parallel",default=1)
+    parser.add_argument("-n","--n-processes",help="Run multiple conversions in parallel",default=1,type=int)
 
     args=parser.parse_args()
 
     pool=multiprocessing.Pool(args.n_processes)
     
-    pool.map(args.run_dirs)
+    pool.map(convert,args.run_dirs)
 
 

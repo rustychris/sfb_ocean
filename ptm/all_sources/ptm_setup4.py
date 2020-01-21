@@ -1,3 +1,6 @@
+"""
+Adjustments to behaviors to better mimic manta thickness.
+"""
 import os
 import glob
 import subprocess
@@ -6,7 +9,7 @@ import logging as log
 import six
 from stompy.model.fish_ptm import ptm_tools, ptm_config
 from stompy.model.suntans import sun_driver
-six.moves.reload_module(ptm_config)
+from stompy import utils
 import numpy as np
 
 ## 
@@ -34,7 +37,7 @@ class Config(ptm_config.PtmConfig):
     rising_speeds_mps=None # filled in below
     # 5 is for pretty small runs.
     particles_per_interval=5
-    rel_time=None # release time
+    rel_times=None # release time
     rel_duration=None # how long release go for after rel_time
     group_duration=None # how long the group runs for, or end_tme if unspecified
     end_time=None # end of PTM run
@@ -42,22 +45,43 @@ class Config(ptm_config.PtmConfig):
 
     def __init__(self,*a,**k):
         super(Config,self).__init__(*a,**k)
+
         if self.model is None and self.model_dir is not None:
             self.model=sun_driver.SuntansModel.load(self.model_dir)
-            self.model.load_bc_ds() 
+            self.model.load_bc_ds()
 
+        # gets populated as the sources are defined
+        self.all_source_names=[]
+        
+        # make everything a sequence
+        def to_seq(x):
+            if isinstance(x,np.ndarray) or isinstance(x,list):
+                return x
+            else:
+                return [x]
+            
+        self.rel_times=to_seq(self.rel_times)
+        self.rising_speeds_mps=to_seq(self.rising_speeds_mps)
+        self.sources=to_seq(self.sources)
+
+        if self.end_time is None:
+            group_ends=[rel+self.group_duration
+                        for rel in self.rel_times]
+            self.end_time=np.max(group_ends)
+            print(f"Overall end time deduced to be {self.end_time}")
+
+    def rising_speed_to_name(self,w_mps):
+        if w_mps>0: # rising
+            name="up%d"%(1e6*w_mps)
+        elif w_mps<0:
+            name="down%d"%(-1e6*w_mps)
+        else:
+            name="none"
+        return name
     @property
     def behavior_names(self):
-        names=[]
-        for b_idx,w_mps in enumerate(self.rising_speeds_mps):
-            if w_mps>0: # rising
-                name="up%d"%(1e6*w_mps)
-            elif w_mps<0:
-                name="down%d"%(-1e6*w_mps)
-            else:
-                name="none"
-            names.append(name)
-        return names
+        return [self.rising_speed_to_name(w_mps)
+                for w_mps in self.rising_speeds_mps]
         
     def add_behaviors(self):
         self.lines+=["""\
@@ -95,10 +119,10 @@ BEHAVIOR INFORMATION
  DISTANCE_OPTION = '{dist_option}'
                           LAYER_1         LAYER 2
 YYYY-MM-DD HH:MM:SS      DISTANCE SPEED  DISTANCE   SPEED
-1990-01-01 00:00:00        0.200   0.000   0.3      {w_mps:.6f}
-1990-01-01 01:00:00        0.200   0.000   0.3      {w_mps:.6f}
-2030-01-01 00:00:00        0.200   0.000   0.3      {w_mps:.6f}
-2030-01-01 01:00:00        0.200   0.000   0.3      {w_mps:.6f}"""
+1990-01-01 00:00:00        0.050   0.000   0.075      {w_mps:.6f}
+1990-01-01 01:00:00        0.050   0.000   0.075      {w_mps:.6f}
+2030-01-01 00:00:00        0.050   0.000   0.075      {w_mps:.6f}
+2030-01-01 01:00:00        0.050   0.000   0.075      {w_mps:.6f}"""
                          .format(dist_option=dist_option,w_mps=w_mps) )
             
     def add_output_sets(self):
@@ -122,20 +146,31 @@ OUTPUT INFORMATION
    REGION_COUNT_UPDATE_INTERVAL_HOURS = 'none'
    STATE_OUTPUT_INTERVAL_HOURS = 'none'
 """]
+
+    def set_release_timing(self):
+        self.release_timing_names=["rel"+utils.to_datetime(rel_time).strftime('%Y%m%d')
+                                   for rel_time in self.rel_times]
         
     def add_release_timing(self):
-        print("Really should release a few more intervals")
-        # so that months overlap.
         self.lines+=[f"""\
 RELEASE TIMING INFORMATION
-   NRELEASE_TIMING_SETS = 1
-   -- release timing set 1 ---        
-     RELEASE_TIMING_SET = 'interval'
-     INITIAL_RELEASE_TIME = '{self.rel_time_str}'
+  NRELEASE_TIMING_SETS = {len(self.rel_times)}"""]
+        def dfmt(t):
+            return utils.to_datetime(t).strftime("%Y-%m-%d %H:%M:%S")
+
+        for idx,(rel_name,rel_time) in enumerate(zip(self.release_timing_names,self.rel_times)):
+            if self.group_duration is not None:
+                inactive=dfmt(rel_time+self.group_duration)
+            else:
+                inactive='none'
+            self.lines+=[f"""
+    -- release timing set {idx+1} ---        
+     RELEASE_TIMING_SET = '{rel_name}'
+     INITIAL_RELEASE_TIME = '{dfmt(rel_time)}'
      RELEASE_TIMING = 'interval'
-       NINTERVALS = {30*24}
+       NINTERVALS = {int(self.rel_duration/np.timedelta64(3600,'s'))}
        RELEASE_INTERVAL_HOURS = 1.0
-     INACTIVATION_TIME = 'none'"""
+            INACTIVATION_TIME = '{inactive}'"""
           ]
         
     def method_text(self):
@@ -166,8 +201,13 @@ RELEASE TIMING INFORMATION
         self.set_flow_releases()
         self.set_point_releases()
     def set_flow_releases(self):
+        # Creates release distribution sets for all flow BCs.
+        # note that they aren't necessarily enabled, they're
+        # just setup
         for seg_idx in range(len(self.model.bc_ds.Nseg)):
             flow_name=self.model.bc_ds.seg_name.values[seg_idx]
+            if self.sources is not None and flow_name not in self.sources:
+                continue
             print("Adding segment flow %s"%flow_name)
 
             segp=self.model.bc_ds.segp.values[seg_idx]
@@ -208,6 +248,9 @@ RELEASE TIMING INFORMATION
             name="src%03d"%Npoint
             pnt=cc[cell]
 
+            if self.sources is not None and name not in self.sources:
+                continue
+
             pnt_release=[
                 f"""\
                  RELEASE_DISTRIBUTION_SET = '{name}' 
@@ -233,38 +276,20 @@ RELEASE TIMING INFORMATION
             
     def set_groups(self):
         # For each of the flow inputs, add up, down, neutral
+
         for behavior in self.behavior_names:
-            for seg_idx in range(len(self.model.bc_ds.Nseg)):
-                flow_name=self.model.bc_ds.seg_name.values[seg_idx]
-                if (self.sources is not None) and (flow_name not in self.sources):
-                    continue
-                group=[f"""\
-             GROUP = '{flow_name}_{behavior}'
-             RELEASE_DISTRIBUTION_SET = '{flow_name}'
-             RELEASE_TIMING_SET = 'interval'
-             PARTICLE_TYPE = 'none'
-             BEHAVIOR_SET = '{behavior}'
-             OUTPUT_SET = '60min_output'
-             OUTPUT_FILE_BASE = '{flow_name}_{behavior}'
-                """]
-                self.groups.append(group)
-
-            # And for each point input:
-            for Npoint in range(len(self.model.bc_ds.Npoint)):
-                point_name="src%03d"%Npoint
-                if (self.sources is not None) and (point_name not in self.sources):
-                    continue
-
-                group=[f"""\
-             GROUP = '{point_name}_{behavior}'
-             RELEASE_DISTRIBUTION_SET = '{point_name}'
-             RELEASE_TIMING_SET = 'interval'
-             PARTICLE_TYPE = 'none'
-             BEHAVIOR_SET = '{behavior}'
-             OUTPUT_SET = '60min_output'
-             OUTPUT_FILE_BASE = '{point_name}_{behavior}'
-                """]
-                self.groups.append(group)
+            for source in self.sources:
+                for rel_name in self.release_timing_names:
+                    group=[f"""\
+                 GROUP = '{source}_{behavior}_{rel_name}'
+                 RELEASE_DISTRIBUTION_SET = '{source}'
+                 RELEASE_TIMING_SET = '{rel_name}'
+                 PARTICLE_TYPE = 'none'
+                 BEHAVIOR_SET = '{behavior}'
+                 OUTPUT_SET = '60min_output'
+                 OUTPUT_FILE_BASE = '{source}_{behavior}_{rel_name}'
+                    """]
+                    self.groups.append(group)
 
     def write_hydro(self):
         # try to generate the hydro part
