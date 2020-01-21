@@ -14,7 +14,8 @@ from stompy import utils
 # 018: set of runs from EC2
 # 019: same config, locally run.
 # 020: time-varying data-based evaporation, and full set of freshwater inflows.
-prefix="/opt2/sfb_ocean/suntans/runs/merged_020_"
+# 021: fix delta inflow to include Threemile Slough, Dutch Slough
+prefix="/opt2/sfb_ocean/suntans/runs/merged_021_"
 
 series_start=np.datetime64('2017-06-10')
 series_end=np.datetime64('2018-07-01')

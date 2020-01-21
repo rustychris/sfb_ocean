@@ -15,10 +15,18 @@ def add_delta_bcs(model,cache_dir):
     sac_bc=dfm.NwisFlowBC(name='SacRiver',station=11455420,cache_dir=cache_dir,
                           filters=[dfm.Lowpass(cutoff_hours=3)],
                           dredge_depth=model.dredge_depth)
+    tmi_bc=dfm.NwisFlowBC(name='SacRiver',station=11337080,cache_dir=cache_dir,
+                          filters=[dfm.Lowpass(cutoff_hours=3),
+                                   dfm.Transform(fn=lambda x: -x)],
+                          mode='add')
+    
     sj_bc =dfm.NwisFlowBC(name='SJRiver',station=11337190,cache_dir=cache_dir,
                           filters=[dfm.Lowpass(cutoff_hours=3)],
                           dredge_depth=model.dredge_depth)
-
+    dutch_bc=dfm.NwisFlowBC(name='SJRiver',station=11313433,cache_dir=cache_dir,
+                          filters=[dfm.Lowpass(cutoff_hours=3)],
+                          mode='add')
+    
     sac_salt_bc=drv.ScalarBC(name='SacRiver',scalar='salinity',value=0.0)
     sj_salt_bc =drv.ScalarBC(name='SJRiver',scalar='salinity',value=0.0)
     sac_temp_bc=drv.ScalarBC(name='SacRiver',scalar='temperature',value=20.0)
