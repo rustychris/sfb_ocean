@@ -31,7 +31,7 @@ sources=[
     # Stormwater sources by mean flow in March, 2018:
     'Napa_River',        # : 4.044
     'Guadalupe_Riv',     # : 2.242
-    'Alameda_Creek',     # : 0.103
+    'Alameda_Creek',     # : 0.103 # That number seems off
     'Coyote_Creek_',     # : 1.317
     'Pacheco_Creek',     # : 1.949
     'Sonoma_Creek',      # : 1.857
@@ -39,8 +39,6 @@ sources=[
     'San_Lorenzo_C',     # : 0.658
     'Montezuma_Slo',     # : 0.492
     'Petaluma_Rive',     # : 0.454
-    'San_Leandro_C',     # : 0.364
-    'San_Francisqu',     # : 0.335
 
     # The WWTPs
     "sunnyvale",
@@ -59,7 +57,11 @@ sources=[
     'unnamed08',         # : 0.701
     'Old_Alameda_C',     # : 0.452
     'unnamed07',         # : 0.439
+    
+    'San_Leandro_C',     # : 0.364
     'San_Pablo_Cre',     # : 0.344
+    'San_Francisqu',     # : 0.335
+    
     'Steinberger_S',     # : 0.267
     'Stevens_Creek',     # : 0.260
     'Glen_Echo_Cre',     # : 0.244
@@ -190,9 +192,9 @@ if __name__=='__main__':
     # list of dicts for individual PTM calls.
     calls=[]
 
-    for rel_time in rel_times:
-        date_name=utils.to_datetime(rel_time).strftime('%Y%m%d')
-        for source in sources:
+    for source in sources:
+        for rel_time in rel_times:
+            date_name=utils.to_datetime(rel_time).strftime('%Y%m%d')
             # 021b => v21 hydro, suffix to clarify hydro, and 'b' says we're doing per-source
             run_dir=f"/opt2/sfb_ocean/ptm/all_source_021b/{source}/{date_name}"
             if os.path.exists(run_dir):
