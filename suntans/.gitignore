@@ -8,3 +8,6 @@ frames-merge-salt-001
 log
 
 ptm-convert.log
+11*_60_*.nc
+salt_temp_frames*
+local_config.py
