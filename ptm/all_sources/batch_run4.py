@@ -94,12 +94,12 @@ sources=[
     'Visitacion',        # : 0.084
     'Temescal_Cree',     # : 0.082 This was included in the past
     'Highline_Cana',     # : 0.073
-    'unnamed05',         # : 0.071
-    'unnamed04',         # : 0.066
-    'Cerrito_Creek',     # : 0.062
+    # close to Temescal    'unnamed05',         # : 0.071
+    # close to Estudillo   'unnamed04',         # : 0.066
+    # close to Meeker 'Cerrito_Creek',     # : 0.062
     'Coyote_Point',      # : 0.053
-    'unnamed13',         # : 0.052
-    'Refugio_Creek',     # : 0.051
+    # close to Arroyo_del_Ha 'unnamed13',         # : 0.052
+    # close to Pinole_Creek 'Refugio_Creek',     # : 0.051
 ]
 
 other_sources=[
