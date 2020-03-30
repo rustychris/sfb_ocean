@@ -14,6 +14,7 @@ import numpy as np
 
 import ptm_setup4 as ptm_setup
 from stompy.model.suntans import sun_driver
+from stompy.model.fish_ptm import ptm_config
 from stompy import utils
 
 # goal is to have 10-day analysis windows,
@@ -71,15 +72,8 @@ sources=[
     # insert the Delta sources in the middle here
     'SacRiver',          # : 306.644
     'SJRiver',           # : -27.774
-]
 
-other_sources=[
-    # # WWTP that were not sampled, not large.
-    # "lg",
-    # "sonoma_valley",
-    # "petaluma",
-    # "ddsd",
-    
+    # These had been excluded in the past.
     'Arroyo_del_Ha',     # : 0.188
     'Redwood_Creek',     # : 0.180 This was included in the past
     'Islais_Creek',      # : 0.173
@@ -106,6 +100,15 @@ other_sources=[
     'Coyote_Point',      # : 0.053
     'unnamed13',         # : 0.052
     'Refugio_Creek',     # : 0.051
+]
+
+other_sources=[
+    # # WWTP that were not sampled, not large.
+    # "lg",
+    # "sonoma_valley",
+    # "petaluma",
+    # "ddsd",
+    
     'Foster_City',       # : 0.046
     'unnamed14',         # : 0.046
     'unnamed06',         # : 0.045
@@ -192,6 +195,8 @@ if __name__=='__main__':
     # list of dicts for individual PTM calls.
     calls=[]
 
+    incompletes=[]
+    
     for source in sources:
         for rel_time in rel_times:
             date_name=utils.to_datetime(rel_time).strftime('%Y%m%d')
@@ -200,6 +205,9 @@ if __name__=='__main__':
             if os.path.exists(run_dir):
                 # This will probably need to get a better test, for when a run
                 # failed.
+                pc=ptm_config.PtmConfig.load(run_dir)
+                if not pc.is_complete():
+                    incompletes.append(run_dir)
                 print(f"Directory exists {run_dir}, will skip")
                 continue
 
@@ -214,9 +222,15 @@ if __name__=='__main__':
                       sources=source)
             calls.append(call)
 
-    print(f"{len(calls)} total PTM calls queued")
+    if incompletes:
+        # this will pick up on ongoing runs, too.
+        print("Runs that are present but appear incomplete.  Fix code or remove directory")
+        for r in incompletes:
+            print(f"  {r}")
+        print("Waiting 10 seconds")
+        time.sleep(10)
 
+    print(f"{len(calls)} total PTM calls queued")
     # each run is pretty chunky - try just one run at a time
     for kwargs in calls:
         make_call(kwargs)
-
