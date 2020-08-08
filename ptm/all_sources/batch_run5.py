@@ -20,11 +20,54 @@ from stompy import utils
 # goal is to have 10-day analysis windows,
 # and each window accounts for particles up to 60 days old.
 # the first manta data to compare to 2017-08-21.
-rel_times=np.arange(
-    np.datetime64("2017-06-20"),
-    np.datetime64("2018-04-20"),
-    np.timedelta64(10*86400,'s'))
-    
+# rel_times=np.arange(
+#     np.datetime64("2017-06-20"),
+#     np.datetime64("2018-04-20"),
+#     np.timedelta64(10*86400,'s'))
+
+# Be explicit so we can avoid any extra work.
+rel_times=np.array([
+    # These are needed to get to 20 days
+    np.datetime64('2017-07-30','s'),
+    np.datetime64('2017-08-09','s'),
+    np.datetime64('2017-08-19','s'),
+    np.datetime64('2017-08-29','s'),
+    np.datetime64('2017-09-08','s'),
+    np.datetime64('2017-10-08','s'),
+    np.datetime64('2017-10-18','s'),
+    np.datetime64('2017-10-28','s'),
+    np.datetime64('2017-12-17','s'),
+    np.datetime64('2017-12-27','s'),
+    np.datetime64('2018-02-05','s'),
+    np.datetime64('2018-02-15','s'),
+    np.datetime64('2018-02-25','s'),
+    np.datetime64('2018-03-07','s'),
+    np.datetime64('2018-03-17','s'),
+
+    # These are needed to get to 40 days
+    np.datetime64('2017-07-10','s'),
+    np.datetime64('2017-07-20','s'),
+    np.datetime64('2017-09-18','s'),
+    np.datetime64('2017-09-28','s'),
+    np.datetime64('2017-11-27','s'),
+    np.datetime64('2017-12-07','s'),
+    np.datetime64('2018-01-16','s'),
+    np.datetime64('2018-01-26','s'),
+
+    # These are needed to get to 60 days
+    np.datetime64('2017-06-20','s'), 
+    np.datetime64('2017-06-30','s'),
+    np.datetime64('2017-11-07','s'),
+    np.datetime64('2017-11-17','s'),
+    np.datetime64('2018-01-06','s'),
+
+    # These are never needed for manta comparisons
+    np.datetime64('2018-03-27','s'),
+    np.datetime64('2018-04-06','s'),
+    np.datetime64('2018-04-16','s')
+])
+
+
 rising_speeds=[0.0005,-0.0005,0.005,-0.005,0.05,-0.05,0.0]
 
 # prioritize the sources
@@ -101,6 +144,10 @@ sources=[
     # close to Arroyo_del_Ha 'unnamed13',         # : 0.052
     # close to Pinole_Creek 'Refugio_Creek',     # : 0.051
 ]
+
+sources_per_chunk=13
+source_chunks=[ sources[i:i+sources_per_chunk]
+                for i in range(0,len(sources),sources_per_chunk)]
 
 other_sources=[
     # # WWTP that were not sampled, not large.
@@ -189,23 +236,21 @@ if __name__=='__main__':
         assert rel_time >= models_start_time,"Set of model data starts after release time"
         assert end_time < models_end_time,"Set of model data ends before end_time"
 
-    # turns out PTM crashes when making groups inactive.
-    # so have to do a single release period at a time.  bummer.
-    
     # list of dicts for individual PTM calls.
     calls=[]
 
     incompletes=[]
-    
-    for source in sources:
+
+    # with batch_run5, each run is a chunk of sources
+    for chunk_idx,chunk_sources in enumerate(source_chunks):
+        chunk_name="chunk%02d"%chunk_idx
         for rel_time in rel_times:
             date_name=utils.to_datetime(rel_time).strftime('%Y%m%d')
             # 021b => v21 hydro, suffix to clarify hydro, and 'b' says we're doing per-source
             # 021c => longer simulations
-            run_dir=f"/opt2/sfb_ocean/ptm/all_source_021c/{source}/{date_name}"
+            # 021d => fixed (hopefully) ptm average output
+            run_dir=f"/opt2/sfb_ocean/ptm/all_source_021d/{chunk_name}/{date_name}"
             if os.path.exists(run_dir):
-                # This will probably need to get a better test, for when a run
-                # failed.
                 pc=ptm_config.PtmConfig.load(run_dir)
                 if not pc.is_complete():
                     incompletes.append(run_dir)
@@ -215,12 +260,12 @@ if __name__=='__main__':
             call=dict(model_dir=model_dirs[-1],
                       rel_times=[rel_time],
                       rel_duration=np.timedelta64(10,'D'),
-                      # group_duration=np.timedelta64(30,'D'),
                       end_time=rel_time+np.timedelta64(70,'D'),
                       run_dir=run_dir,
                       model=model,
                       rising_speeds_mps=rising_speeds,
-                      sources=source)
+                      particles_per_interval=10,
+                      sources=chunk_sources)
             calls.append(call)
 
     if incompletes:
