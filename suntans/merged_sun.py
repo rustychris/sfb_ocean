@@ -88,6 +88,8 @@ if not args.resume:
 
     model.config['Nkmax']=60
     model.config['stairstep']=1
+    model.config['dzmin_surface']=0.25 # dramatic!
+    
     model.dredge_depth=-2 + z_offset_manual # 2m below the offset of -5m.
 
     # 2019-07-03: trying 20 - hold on tight!
