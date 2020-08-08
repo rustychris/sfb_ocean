@@ -5,26 +5,26 @@ import logging as log
 import local_config
 
 from stompy.io.local import usgs_nwis
-import stompy.model.delft.dflow_model as dfm
+import stompy.model.hydro_model as hm
 import stompy.model.suntans.sun_driver as drv
 from stompy.spatial import wkb2shp
 
 def add_delta_bcs(model,cache_dir):
     # Delta inflow
     # SacRiver, SJRiver
-    sac_bc=dfm.NwisFlowBC(name='SacRiver',station=11455420,cache_dir=cache_dir,
-                          filters=[dfm.Lowpass(cutoff_hours=3)],
+    sac_bc=hm.NwisFlowBC(name='SacRiver',station=11455420,cache_dir=cache_dir,
+                          filters=[hm.Lowpass(cutoff_hours=3)],
                           dredge_depth=model.dredge_depth)
-    tmi_bc=dfm.NwisFlowBC(name='SacRiver',station=11337080,cache_dir=cache_dir,
-                          filters=[dfm.Lowpass(cutoff_hours=3),
-                                   dfm.Transform(fn=lambda x: -x)],
+    tmi_bc=hm.NwisFlowBC(name='SacRiver',station=11337080,cache_dir=cache_dir,
+                          filters=[hm.Lowpass(cutoff_hours=3),
+                                   hm.Transform(fn=lambda x: -x)],
                           mode='add')
     
-    sj_bc =dfm.NwisFlowBC(name='SJRiver',station=11337190,cache_dir=cache_dir,
-                          filters=[dfm.Lowpass(cutoff_hours=3)],
+    sj_bc =hm.NwisFlowBC(name='SJRiver',station=11337190,cache_dir=cache_dir,
+                          filters=[hm.Lowpass(cutoff_hours=3)],
                           dredge_depth=model.dredge_depth)
-    dutch_bc=dfm.NwisFlowBC(name='SJRiver',station=11313433,cache_dir=cache_dir,
-                          filters=[dfm.Lowpass(cutoff_hours=3)],
+    dutch_bc=hm.NwisFlowBC(name='SJRiver',station=11313433,cache_dir=cache_dir,
+                          filters=[hm.Lowpass(cutoff_hours=3)],
                           mode='add')
     
     sac_salt_bc=drv.ScalarBC(name='SacRiver',scalar='salinity',value=0.0)
@@ -40,7 +40,7 @@ def add_usgs_stream_bcs(model,cache_dir):
                           (11169025, "SCLARAVCc"), # Alviso Sl / Guad river
                           (11180700,"UALAMEDA"), # Alameda flood control
                           (11458000,"NAPA") ]:
-        Q_bc=dfm.NwisFlowBC(name=name,station=station,cache_dir=cache_dir,
+        Q_bc=hm.NwisFlowBC(name=name,station=station,cache_dir=cache_dir,
                             dredge_depth=model.dredge_depth)
         salt_bc=drv.ScalarBC(name=name,scalar='salinity',value=0.0)
         temp_bc=drv.ScalarBC(name=name,scalar='temperature',value=20.0)
@@ -77,11 +77,11 @@ def add_potw_bcs(model,cache_dir,temperature=20.0):
         hits=model.match_gazetteer(name=potw_name)
         if hits[0]['geom'].type=='LineString':
             log.info("%s: flow bc"%potw_name)
-            Q_bc=drv.FlowBC(name=potw_name,Q=Q_da,filters=[dfm.Lag(-offset)],
+            Q_bc=drv.FlowBC(name=potw_name,Q=Q_da,filters=[hm.Lag(-offset)],
                             dredge_depth=model.dredge_depth)
         else:
             log.info("%s: source bc"%potw_name)
-            Q_bc=drv.SourceSinkBC(name=potw_name,Q=Q_da,filters=[dfm.Lag(-offset)],
+            Q_bc=drv.SourceSinkBC(name=potw_name,Q=Q_da,filters=[hm.Lag(-offset)],
                                   dredge_depth=model.dredge_depth)
 
         salt_bc=drv.ScalarBC(parent=Q_bc,scalar='salinity',value=0.0)
