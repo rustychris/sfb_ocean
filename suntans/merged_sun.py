@@ -83,7 +83,7 @@ drv.SuntansModel.mpi_bin_dir=local_config.mpi_bin_dir # "/usr/bin/"
 if not args.resume:
     # HYCOM experiments change just before 2017-06-15
     model=drv.SuntansModel()
-    model.num_procs=16
+    model.num_procs=4
     model.load_template("sun-template.dat")
 
     model.config['Nkmax']=60
@@ -206,7 +206,7 @@ ocean_bcs=[]
 
 if ocean_method=='eta-otps':
     ocean_bc=drv.MultiBC(drv.OTPSStageBC,name='Ocean',otps_model='wc')
-    ocean_offset_bc=drv.StageBC(name='Ocean',mode='add',z=z_offset_manual)
+    ocean_offset_bc=drv.StageBC(name='Ocean',mode='add',water_level=z_offset_manual)
     ocean_bcs+= [ocean_bc,ocean_offset_bc]
 elif ocean_method=='flux-otps':
     ocean_bc=drv.MultiBC(drv.OTPSFlowBC,name='Ocean',otps_model='wc')
@@ -235,7 +235,7 @@ elif ocean_method.startswith('velocity-hycom'):
     for ocean_shore in ["Ocean-north-shore",
                         "Ocean-south-shore"]:
         ocean_shore_bc=drv.MultiBC(drv.OTPSStageBC,name=ocean_shore,otps_model='wc')
-        offset_bc=drv.StageBC(name=ocean_shore,mode='add',z=z_offset_manual+msl_navd88)
+        offset_bc=drv.StageBC(name=ocean_shore,mode='add',water_level=z_offset_manual+msl_navd88)
         shore_salt_bc=drv.HycomMultiScalarBC(name=ocean_shore,parent=ocean_shore_bc,
                                              scalar='salinity',cache_dir=cache_dir,ll_box=hycom_ll_box)
         shore_temp_bc=drv.HycomMultiScalarBC(name=ocean_shore,parent=ocean_shore_bc,
