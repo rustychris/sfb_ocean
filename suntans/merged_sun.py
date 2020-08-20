@@ -97,8 +97,7 @@ else:
             # Could use srun outside of an existing job to synchronously
             # schedule and run.  But then we'd have to get the partition and task
             # details down to here.
-            assert 'SLURM_JOBID' in os.environ,"mpi tasks need to be run within a job!"
-            assert os.environ['SLURM_JOBID']!="","mpi tasks need to be run within a job!"
+            assert local_config.slurm_jobid() is not None,"mpi tasks need to be run within a job!"
 
         @staticmethod
         def slurm_num_procs():
@@ -118,19 +117,22 @@ else:
             sun="sun"
             if self.sun_bin_dir is not None:
                 sun=os.path.join(self.sun_bin_dir,sun)
-            assert self.num_procs==self.slurm_num_procs(),(
-                "Mismatch between instances num_procs %d and SLURM ntasks %d"
-                %(self.num_procs,self.slurm_num_procs()))
+            ntasks_global=local_config.slurm_ntasks_global()
+            if not self.num_procs==ntasks_global:
+                raise Exception("Mismatch between instances num_procs %d and SLURM ntasks %d"
+                                %(self.num_procs,ntasks_global))
 
             cmd=["srun"]
-            n_het=int(os.environ.get('SLURM_HET_SIZE',0))
+            n_het=int(os.environ.get('SLURM_PACK_SIZE',0))
             if n_het>0:
-                cmd.append("--het-group=0,1")
+                cmd.append("--pack-group=0-%d"%(n_het-1))
             cmd+=[sun] + sun_args
+            print("About to invoke MPI suntans:")
+            print(cmd,flush=True)
             subprocess.call(cmd)
 
 if __name__=='__main__' and args.wetrun:
-    model=SuntansModel.load(args.run_dir)
+    model=SuntansModel.load(args.dir)
     model.partition()
     model.run_simulation()
     sys.exit(0)

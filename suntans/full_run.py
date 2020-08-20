@@ -57,6 +57,11 @@ def script_dir(): # make sure script destination exists, and return it
         os.makedirs(s)
     return s
 
+# These only affect the first time through the loop.
+# after that.
+dryrun=False # invoke dry run.  For the moment the dry run portion finished, so leave it there...
+wetrun=True # invoke wet
+
 while run_start < series_end:
     # truncate run_start to integer days 
     run_day_start=utils.floor_dt64(run_start,dt=np.timedelta64(86400,'s'))
@@ -65,19 +70,6 @@ while run_start < series_end:
     a=utils.to_datetime(run_start)
     b=utils.to_datetime(run_stop)
     run_dir=prefix+a.strftime('%Y%m%d')
-
-    if os.path.exists(run_dir):
-        if sun_driver.SuntansModel.run_completed(run_dir):
-            log.error("%s has already run, but we were about to clobber it"%run_dir)
-            sys.exit(1)
-        else:
-            log.warning("Stale run in %s will be removed"%run_dir)
-            shutil.rmtree(run_dir)
-    fmt='%Y-%m-%dT%H:%M'
-    dryrun=True # invoke dry run
-    wetrun=True # invoke wet
-    
-    base_cmd=f"python merged_sun.py -d {run_dir}"
 
     phases=[]
     if dryrun:
@@ -88,11 +80,14 @@ while run_start < series_end:
         # unless something specific with wet/dry phases was requested, do a normal
         # combined run (setup and execute)
         phases.append('drywet')
+    
+    fmt='%Y-%m-%dT%H:%M'    
 
     for phase in phases:
-        cmd=basecmd
+        cmd=f"python merged_sun.py -d {run_dir}"
+        
         if phase=='dry':
-            cmd=basecmd+" -n"
+            cmd=cmd+" -n"
 
         if phase!='wet': # Define the run parameters
             if previous_run_dir is None:
@@ -101,11 +96,24 @@ while run_start < series_end:
                 cmd=cmd+ f" -r {previous_run_dir}"
             cmd=cmd+f" -e {b.strftime(fmt)}"
 
+            # And make sure that we remove an existing stale run and avoid
+            # clobbering existing completed run.
+            if os.path.exists(run_dir):
+                if sun_driver.SuntansModel.run_completed(run_dir):
+                    log.error("%s has already run, but we were about to clobber it"%run_dir)
+                    sys.exit(1)
+                else:
+                    log.warning("Stale run in %s will be removed"%run_dir)
+                    shutil.rmtree(run_dir)
+        else:
+            assert os.path.exists(run_dir)
+
         if phase!='dry': # Check MPI status
-            assert os.environ.get('SLURM_JOBID',None) is not None
-            slurm_num_procs=int(os.environ['SLURM_NTASKS'])
-            if slurm_num_procs!=local_config.num_procs:
-                print("In SLURM task, but ntasks(%d) != local_config num_procs(%d)"%( slurm_num_procs,
+            assert local_config.slurm_jobid() is not None
+
+            n_tasks_global=local_config.slurm_ntasks_global()
+            if n_tasks_global!=local_config.num_procs:
+                print("In SLURM task, but ntasks(%d) != local_config num_procs(%d)"%( n_tasks_global,
                                                                                       local_config.num_procs),
                       flush=True)
                 raise Exception("Mismatch in number of processes")
@@ -122,3 +130,7 @@ while run_start < series_end:
     # my stop is your start
     run_start=run_stop
     previous_run_dir=run_dir
+
+    # subsequent times through the loop should do both phases
+    dryrun=True
+    wetrun=True 

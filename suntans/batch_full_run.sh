@@ -17,7 +17,7 @@
 #SBATCH --ntasks-per-core 1
 # First component has enough resources on a single node to run the setup script:
 #SBATCH -n 4 -N 1
-#SBATCH hetjob
+#SBATCH packjob
 #SBATCH -n 12 -N 1-12
 
 #REM SBATCH -n 16
@@ -29,6 +29,10 @@ conda activate general
 
 export OMPI_MCA_mpi_show_mca_params=all
 export OMPI_MCA_mpi_abort_print_stack=true
+
+# Let's see how the heteorgeneous stuff is reported. seems that there
+# might be an issue where NTASKS is not reflecting the global count
+export
 
 python full_run.py
 
