@@ -77,11 +77,11 @@ def add_potw_bcs(model,cache_dir,temperature=20.0):
         hits=model.match_gazetteer(name=potw_name)
         if hits[0]['geom'].type=='LineString':
             log.info("%s: flow bc"%potw_name)
-            Q_bc=drv.FlowBC(name=potw_name,Q=Q_da,filters=[hm.Lag(-offset)],
+            Q_bc=drv.FlowBC(name=potw_name,flow=Q_da,filters=[hm.Lag(-offset)],
                             dredge_depth=model.dredge_depth)
         else:
             log.info("%s: source bc"%potw_name)
-            Q_bc=drv.SourceSinkBC(name=potw_name,Q=Q_da,filters=[hm.Lag(-offset)],
+            Q_bc=drv.SourceSinkBC(name=potw_name,flow=Q_da,filters=[hm.Lag(-offset)],
                                   dredge_depth=model.dredge_depth)
 
         salt_bc=drv.ScalarBC(parent=Q_bc,scalar='salinity',value=0.0)
@@ -217,7 +217,7 @@ def add_scaled_streamflow(model,
 
         flow_bc=model.FlowBC(name=src_name,
                              geom=feat['geom'],
-                             Q=stn_ds.flow_cms)
+                             flow=stn_ds.flow_cms)
         salt_bc=model.ScalarBC(parent=flow_bc,scalar='salinity',value=0.0)
         temp_bc=model.ScalarBC(parent=flow_bc,scalar='temperature',value=20.0)
         

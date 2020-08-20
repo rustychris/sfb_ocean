@@ -4,12 +4,14 @@ import numpy as np
 import logging as log
 log.basicConfig(level=log.INFO)
 import glob
+import tempfile
 import datetime
 import subprocess
 import pandas as pd
 import shutil
 from stompy.model.suntans import sun_driver
 from stompy import utils
+import local_config
 
 # 018: set of runs from EC2
 # 019: same config, locally run.
@@ -47,7 +49,14 @@ if previous_run_dir is not None:
     run_start=previous_model.restartable_time()
 else:
     run_start=series_start
-    
+
+# Where MPI scripts go
+def script_dir(): # make sure script destination exists, and return it
+    s=prefix+"scripts"
+    if not os.path.exists(s):
+        os.makedirs(s)
+    return s
+
 while run_start < series_end:
     # truncate run_start to integer days 
     run_day_start=utils.floor_dt64(run_start,dt=np.timedelta64(86400,'s'))
@@ -65,17 +74,47 @@ while run_start < series_end:
             log.warning("Stale run in %s will be removed"%run_dir)
             shutil.rmtree(run_dir)
     fmt='%Y-%m-%dT%H:%M'
-    cmd=f"python merged_sun.py -d {run_dir}"
-    if previous_run_dir is None:
-        cmd=cmd+ f" -s {a.strftime(fmt)}"
-    else:
-        cmd=cmd+ f" -r {previous_run_dir}"
-    cmd=cmd+f" -e {b.strftime(fmt)}"
-    log.info("Running: %s"%cmd)
+    dryrun=True # invoke dry run
+    wetrun=True # invoke wet
+    
+    base_cmd=f"python merged_sun.py -d {run_dir}"
 
-    # will raise exception on child failure.
-    proc=subprocess.run(cmd,shell=True,check=True)
+    phases=[]
+    if dryrun:
+        phases.append('dry')
+    if wetrun:
+        phases.append('wet')
+    if not (dryrun or wetrun):
+        # unless something specific with wet/dry phases was requested, do a normal
+        # combined run (setup and execute)
+        phases.append('drywet')
 
+    for phase in phases:
+        cmd=basecmd
+        if phase=='dry':
+            cmd=basecmd+" -n"
+
+        if phase!='wet': # Define the run parameters
+            if previous_run_dir is None:
+                cmd=cmd+ f" -s {a.strftime(fmt)}"
+            else:
+                cmd=cmd+ f" -r {previous_run_dir}"
+            cmd=cmd+f" -e {b.strftime(fmt)}"
+
+        if phase!='dry': # Check MPI status
+            assert os.environ.get('SLURM_JOBID',None) is not None
+            slurm_num_procs=int(os.environ['SLURM_NTASKS'])
+            if slurm_num_procs!=local_config.num_procs:
+                print("In SLURM task, but ntasks(%d) != local_config num_procs(%d)"%( slurm_num_procs,
+                                                                                      local_config.num_procs),
+                      flush=True)
+                raise Exception("Mismatch in number of processes")
+        if phase=='wet':
+            cmd=cmd+" -w"
+            
+        log.info(f"Running {phase} phase: {cmd}")
+        proc=subprocess.run(cmd,shell=True,check=True)
+        
     if not sun_driver.SuntansModel.run_completed(run_dir):
         log.error("That run failed -- will bail out")
         break

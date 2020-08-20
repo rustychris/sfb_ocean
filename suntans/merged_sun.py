@@ -1,6 +1,7 @@
 """
 Combining ocean_sun and sfbay_sun for the merged grid.
 """
+import sys
 import six
 import shutil
 import os
@@ -11,6 +12,7 @@ import numpy as np
 import xarray as xr
 from stompy import utils, filters
 from stompy.spatial import field
+import subprocess
 
 import logging as log
 
@@ -45,8 +47,11 @@ parser.add_argument("-r", "--resume", help="Resume from run",
                     default=None)
 parser.add_argument("-n", "--dryrun", help="Do not actually partition or run the simulation",
                     action='store_true')
+parser.add_argument('-w', "--wetrun", help="Only partition (if needed) and run",
+                    action='store_true')
 parser.add_argument("--ocean",help="Set ocean forcing method",
                     default="velocity-hycom+otps")
+
 parser.add_argument("-g","--write-grid", help="Write grid to ugrid")
 
 if __name__=='__main__':
@@ -75,15 +80,65 @@ z_offset_manual=-5 # m
 # or (-5+0.94) m in the model datum.
 msl_navd88=0.94 # m
 
-import local_config
-drv.SuntansModel.sun_bin_dir=local_config.sun_bin_dir # "/home/rusty/src/suntans/main"
-# AVOID anaconda mpi (at least if suntans is compiled with system mpi)
-drv.SuntansModel.mpi_bin_dir=local_config.mpi_bin_dir # "/usr/bin/"
+DEBUG_MEM=False
 
+import local_config
+if 0: # old way 
+    drv.SuntansModel.sun_bin_dir=local_config.sun_bin_dir # "/home/rusty/src/suntans/main"
+    # AVOID anaconda mpi (at least if suntans is compiled with system mpi)
+    drv.SuntansModel.mpi_bin_dir=local_config.mpi_bin_dir # "/usr/bin/"
+    SuntansModel=drv.SuntansModel
+else:
+    # For farm -- assumes that for any mpi work we're already in a job.
+    class SuntansModel(drv.SuntansModel):
+        sun_bin_dir=os.path.join(os.environ['HOME'],"src/suntans/main")
+        @staticmethod
+        def assert_slurm():
+            # Could use srun outside of an existing job to synchronously
+            # schedule and run.  But then we'd have to get the partition and task
+            # details down to here.
+            assert 'SLURM_JOBID' in os.environ,"mpi tasks need to be run within a job!"
+            assert os.environ['SLURM_JOBID']!="","mpi tasks need to be run within a job!"
+
+        @staticmethod
+        def slurm_num_procs():
+            return int(os.environ['SLURM_NTASKS'])
+        
+        def run_mpi(self,sun_args):
+            if DEBUG_MEM:
+                import resource,sys
+                print("DEBUGGING")
+                print("About to invoke MPI from merged_sun.py")
+                max_rss_kb=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+                print(f"  {max_rss_kb/1024:.1f} MB")
+                sys.exit(1)
+
+            self.assert_slurm()
+            
+            sun="sun"
+            if self.sun_bin_dir is not None:
+                sun=os.path.join(self.sun_bin_dir,sun)
+            assert self.num_procs==self.slurm_num_procs(),(
+                "Mismatch between instances num_procs %d and SLURM ntasks %d"
+                %(self.num_procs,self.slurm_num_procs()))
+
+            cmd=["srun"]
+            n_het=int(os.environ.get('SLURM_HET_SIZE',0))
+            if n_het>0:
+                cmd.append("--het-group=0,1")
+            cmd+=[sun] + sun_args
+            subprocess.call(cmd)
+
+if __name__=='__main__' and args.wetrun:
+    model=SuntansModel.load(args.run_dir)
+    model.partition()
+    model.run_simulation()
+    sys.exit(0)
+        
 if not args.resume:
     # HYCOM experiments change just before 2017-06-15
-    model=drv.SuntansModel()
-    model.num_procs=4
+    model=SuntansModel()
+    model.num_procs=local_config.num_procs
     model.load_template("sun-template.dat")
 
     model.config['Nkmax']=60
@@ -165,7 +220,7 @@ if not args.resume:
     edge_z=model.grid.edges['edge_z_bed']
     assert edge_z.min()<0.0,"Looks like edge depths were not set on %s"%dest_grid
 else:
-    old_model=drv.SuntansModel.load(args.resume)
+    old_model=SuntansModel.load(args.resume)
     model=old_model.create_restart(symlink=True)
     model.dredge_depth=None # no need to dredge grid if a restart
 
@@ -176,8 +231,7 @@ else:
 model.projection="EPSG:26910"
 model.run_stop=np.datetime64(args.end)
 
-# run_dir='/opt/sfb_ocean/suntans/runs/merge_001-20170601'
-model.set_run_dir(args.dir,mode='askclobber')
+model.set_run_dir(args.dir,mode='create')
     
 model.add_gazetteer(os.path.join(grid_dir,"linear_features.shp"))
 model.add_gazetteer(os.path.join(grid_dir,"point_features.shp"))
