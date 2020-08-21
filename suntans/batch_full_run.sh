@@ -12,7 +12,6 @@
 #SBATCH --time 5-00:00:00
 # don't request a single node.  with 16 cores and each node having
 # 12 cores/24 threads, this will oversubscribe the core resources
-#REMSBATCH -N 1
 
 #SBATCH --ntasks-per-core 1
 # First component has enough resources on a single node to run the setup script:
