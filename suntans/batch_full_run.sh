@@ -4,6 +4,8 @@
 #SBATCH -e slurm_out-%j.output
 #SBATCH --partition med
 #SBATCH --verbose
+# Not sure if I can select this
+#SBATCH --requeue
 
 # Got some messages that the process was killed due to out-of-memory
 # Might have been just the python process.
@@ -13,11 +15,13 @@
 # don't request a single node.  with 16 cores and each node having
 # 12 cores/24 threads, this will oversubscribe the core resources
 
-#SBATCH --ntasks-per-core 1
 # First component has enough resources on a single node to run the setup script:
 #SBATCH -n 4 -N 1
 #SBATCH packjob
-#SBATCH -n 12 -N 1-12
+#SBATCH --ntasks-per-core 1
+# Now I'm putting enough cores in the second component to run the full
+# mpi job
+#SBATCH -n 16 -N 1-12
 
 #REM SBATCH -n 16
 #REM SBATCH

@@ -117,15 +117,10 @@ else:
             sun="sun"
             if self.sun_bin_dir is not None:
                 sun=os.path.join(self.sun_bin_dir,sun)
-            ntasks_global=local_config.slurm_ntasks_global()
-            if not self.num_procs==ntasks_global:
-                raise Exception("Mismatch between instances num_procs %d and SLURM ntasks %d"
-                                %(self.num_procs,ntasks_global))
-
+                
+            pack_opts=local_config.slurm_pack_options(self.num_procs)
             cmd=["srun"]
-            n_het=int(os.environ.get('SLURM_PACK_SIZE',0))
-            if n_het>0:
-                cmd.append("--pack-group=0-%d"%(n_het-1))
+            cmd+=pack_opts
             cmd+=[sun] + sun_args
             print("About to invoke MPI suntans:")
             print(cmd,flush=True)

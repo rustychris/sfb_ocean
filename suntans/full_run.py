@@ -58,8 +58,8 @@ def script_dir(): # make sure script destination exists, and return it
     return s
 
 # These only affect the first time through the loop.
-# after that.
-dryrun=False # invoke dry run.  For the moment the dry run portion finished, so leave it there...
+# subsequent iterations always do both dry and wet.
+dryrun=True # invoke dry run
 wetrun=True # invoke wet
 
 while run_start < series_end:
@@ -110,13 +110,7 @@ while run_start < series_end:
 
         if phase!='dry': # Check MPI status
             assert local_config.slurm_jobid() is not None
-
-            n_tasks_global=local_config.slurm_ntasks_global()
-            if n_tasks_global!=local_config.num_procs:
-                print("In SLURM task, but ntasks(%d) != local_config num_procs(%d)"%( n_tasks_global,
-                                                                                      local_config.num_procs),
-                      flush=True)
-                raise Exception("Mismatch in number of processes")
+            local_config.slurm_check_mpi_ntasks(local_config.num_procs)
         if phase=='wet':
             cmd=cmd+" -w"
             
