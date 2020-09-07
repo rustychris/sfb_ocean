@@ -162,7 +162,7 @@ if not args.resume:
     model.config['metmodel']=5 # wind, temperature nudging
     
     model.config['rstretch']=1.125 # about 1.7m surface layer thickness
-    model.config['Cmax']=30.0 # volumetric is a better test, this is more a backup.
+    model.config['Cmax']=60.0 # volumetric is a better test, this is more a backup.
 
     # esp. with edge depths, seems better to use z0B so that very shallow
     # edges can have the right drag.
