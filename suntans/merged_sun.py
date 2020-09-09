@@ -224,6 +224,10 @@ else:
     edge_z=model.grid.edges['edge_z_bed']
     assert edge_z.min()<0.0,"Looks like edge depths were not found in restart"
 
+    # Changing this mid-run.
+    model.config['Cmax']=60.0 # volumetric is a better test, this is more a backup.
+
+
 # common to restart and initial run:
 model.projection="EPSG:26910"
 model.run_stop=np.datetime64(args.end)
