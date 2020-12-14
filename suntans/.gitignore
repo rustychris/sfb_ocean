@@ -11,3 +11,4 @@ ptm-convert.log
 11*_60_*.nc
 salt_temp_frames*
 local_config.py
+*.output

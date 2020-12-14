@@ -36,10 +36,10 @@ class Config(ptm_config.PtmConfig):
 
     rising_speeds_mps=None # filled in below
     # 5 is for pretty small runs.
-    particles_per_interval=5
+    particles_per_interval=20
     rel_times=None # release time
     rel_duration=None # how long release go for after rel_time
-    group_duration=None # how long the group runs for, or end_tme if unspecified
+    group_duration=None # how long the group runs for, or end_time if unspecified
     end_time=None # end of PTM run
     sources=None # list of source names to include
 
@@ -78,6 +78,10 @@ class Config(ptm_config.PtmConfig):
         else:
             name="none"
         return name
+
+    def add_transects(self):
+        pass # no longer in ptm
+    
     @property
     def behavior_names(self):
         return [self.rising_speed_to_name(w_mps)
@@ -178,7 +182,7 @@ RELEASE TIMING INFORMATION
         return """\
  MAX_HORIZONTAL_ADVECTION_SUBSTEPS = 10
  MAX_HORIZONTAL_DIFFUSION_SUBSTEPS = 10
- GRID_TYPE = 'unstructured'
+ -- deprecated GRID_TYPE = 'unstructured'
  ADVECTION_METHOD = 'streamline'
    NORMAL_VELOCITY_GRADIENT = 'constant'
  VERT_COORD_TYPE = 'z-level'
@@ -327,7 +331,7 @@ RELEASE TIMING INFORMATION
             fp.write(" NUM_FILES = %d\n"%file_count)
             fp.write("\n".join(lines))
 
-    fish_ptm_exe="/home/rusty/src/fish_ptm/PTM/FISH_PTM.exe"
+    fish_ptm_exe="/home/rustyh/src/fish_ptm/PTM/FISH_PTM.exe"
     fish_ptm_clear_ldpath=False
     def execute(self):
         log.info("Running PTM")

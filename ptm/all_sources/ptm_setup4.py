@@ -36,10 +36,10 @@ class Config(ptm_config.PtmConfig):
 
     rising_speeds_mps=None # filled in below
     # 5 is for pretty small runs.
-    particles_per_interval=5
+    particles_per_interval=20
     rel_times=None # release time
     rel_duration=None # how long release go for after rel_time
-    group_duration=None # how long the group runs for, or end_tme if unspecified
+    group_duration=None # how long the group runs for, or end_time if unspecified
     end_time=None # end of PTM run
     sources=None # list of source names to include
 

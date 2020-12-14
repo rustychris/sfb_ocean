@@ -8,3 +8,4 @@ FISH_PTM.grd_geom
 fort.*
 
 all_source_select_w_const
+*.output

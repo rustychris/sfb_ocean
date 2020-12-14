@@ -12,7 +12,7 @@ import sys
 import glob
 import numpy as np
 
-import ptm_setup4 as ptm_setup
+import ptm_setup5 as ptm_setup
 from stompy.model.suntans import sun_driver
 from stompy.model.fish_ptm import ptm_config
 from stompy import utils
@@ -213,11 +213,20 @@ def make_call(args):
     cfg.clean()
     cfg.write()
     cfg.write_hydro()
-    os.environ['OMP_NUM_THREADS']="4"
+    # os.environ['OMP_NUM_THREADS']="8" # set by slurm batch script
     cfg.execute()
 
 if __name__=='__main__':
-    ptm_avgs=glob.glob("/opt2/sfb_ocean/suntans/runs/merged_021_*/ptm_average.nc_0000.nc")
+    import argparse
+    parser = argparse.ArgumentParser(description='Check existing PTM runs and run remaining.')
+
+    parser.add_argument('-n', "--dry-run", help="Report on what would be done then exit",
+                        action='store_true')
+    parser.add_argument("-v", "--verbose", help="Increase reporting",
+                        action='store_true')
+    args=parser.parse_args()
+
+    ptm_avgs=glob.glob("/home/rustyh/src/sfb_ocean/suntans/runs/merged_022_*/ptm_average.nc_0000.nc")
     ptm_avgs.sort()
 
     model_dirs=[os.path.dirname(fn) for fn in ptm_avgs]
@@ -249,7 +258,8 @@ if __name__=='__main__':
             # 021b => v21 hydro, suffix to clarify hydro, and 'b' says we're doing per-source
             # 021c => longer simulations
             # 021d => fixed (hopefully) ptm average output
-            run_dir=f"/opt2/sfb_ocean/ptm/all_source_021d/{chunk_name}/{date_name}"
+            # 022a => farm hydro
+            run_dir=f"/home/rustyh/src/sfb_ocean/ptm/all_source_022a/{chunk_name}/{date_name}"
             if os.path.exists(run_dir):
                 pc=ptm_config.PtmConfig.load(run_dir)
                 if not pc.is_complete():
@@ -268,15 +278,25 @@ if __name__=='__main__':
                       sources=chunk_sources)
             calls.append(call)
 
+    print(f"{len(calls)} total PTM calls queued")
+    if args.verbose:
+        for kwargs in calls:
+            print(f"  {kwargs['run_dir']}")
+        print()
+            
     if incompletes:
         # this will pick up on ongoing runs, too.
         print("Runs that are present but appear incomplete.  Fix code or remove directory")
         for r in incompletes:
             print(f"  {r}")
-        print("Waiting 10 seconds")
-        time.sleep(10)
+        if not args.dry_run:
+            print("Waiting 10 seconds")
+            time.sleep(10)
 
-    print(f"{len(calls)} total PTM calls queued")
+    if args.dry_run:
+        print("Dry run: exiting")
+        sys.exit(0)
+        
     # each run is pretty chunky - try just one run at a time
     for kwargs in calls:
         make_call(kwargs)

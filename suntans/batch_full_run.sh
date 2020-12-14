@@ -2,9 +2,9 @@
 #SBATCH --job-name sfb_merge22
 #SBATCH -o slurm_out-%j.output
 #SBATCH -e slurm_out-%j.output
-#SBATCH --partition med
+#SBATCH --partition high
 #SBATCH --verbose
-# Not sure if I can select this
+# Not sure if I can select this -- does not appear to do anything
 #SBATCH --requeue
 
 # Got some messages that the process was killed due to out-of-memory
@@ -15,16 +15,20 @@
 # don't request a single node.  with 16 cores and each node having
 # 12 cores/24 threads, this will oversubscribe the core resources
 
-# First component has enough resources on a single node to run the setup script:
-#SBATCH -n 4 -N 1
-#SBATCH packjob
-#SBATCH --ntasks-per-core 1
-# Now I'm putting enough cores in the second component to run the full
-# mpi job
-#SBATCH -n 16 -N 1-12
+# This way is going to be tough to schedule...
+#SBATCH -N 4
+#SBATCH --ntasks-per-node 4
 
-#REM SBATCH -n 16
-#REM SBATCH
+# Old way: I was doing this, but the heterogeneous jobs seem buggy.
+#REM   First component has enough resources on a single node to run the setup script:
+#REM  SBATCH -n 4 -N 1
+#REM  SBATCH packjob
+#REM  SBATCH --ntasks-per-core 1
+#REM   Now I'm putting enough cores in the second component to run the full
+#REM   mpi job
+#REM  SBATCH -n 16 -N 1-12
+
+
 
 conda activate general
 # full_run will invoke merged_sun, which gets the run configured and
