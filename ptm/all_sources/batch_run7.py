@@ -4,6 +4,9 @@ batch_run3.py: run all of each source in one go,
   and divide evenly and completely.
 batch_run4.py: Re-run, and limit the surface/bed distance even more, to 0.095m
 to match the manta trawl calculations.
+batch_run6.py: Run with no kill at flow boundaries, and a kill line near the ocean
+  boundary.
+batch_run7.py: same, but on farm.
 """
 
 import os
@@ -11,14 +14,14 @@ import time
 import sys
 import glob
 import numpy as np
+import logging
 
-import ptm_setup5 as ptm_setup
+log=logging.getLogger('batch_ptm')
+
+import ptm_setup7 as ptm_setup
 from stompy.model.suntans import sun_driver
 from stompy.model.fish_ptm import ptm_config
 from stompy import utils
-import logging
-
-log=logging.getLogger('batch_run_ptm')
 
 # goal is to have 10-day analysis windows,
 # and each window accounts for particles up to 60 days old.
@@ -67,7 +70,17 @@ rel_times=np.array([
     # These are never needed for manta comparisons
     np.datetime64('2018-03-27','s'),
     np.datetime64('2018-04-06','s'),
-    np.datetime64('2018-04-16','s')
+    np.datetime64('2018-04-16','s'),
+
+    # Late additions, just for animations
+    # These cannot run for the full 70 days, though...
+    np.datetime64('2018-04-26','s'),
+    np.datetime64('2018-05-06','s'),
+    np.datetime64('2018-05-16','s'),
+    np.datetime64('2018-05-26','s'),
+    np.datetime64('2018-06-05','s'),
+    np.datetime64('2018-06-15','s'),
+    np.datetime64('2018-06-25','s'),    
 ])
 
 
@@ -115,10 +128,6 @@ sources=[
     'Matadero_and_',     # : 0.224
     'Sulphur_Sprin',     # : 0.215
 
-    # insert the Delta sources in the middle here
-    # 'SacRiver',          # : 306.644
-    #'SJRiver',           # : -27.774
-
     # These had been excluded in the past.
     'Arroyo_del_Ha',     # : 0.188
     'Redwood_Creek',     # : 0.180 This was included in the past
@@ -146,6 +155,8 @@ sources=[
     'Coyote_Point',      # : 0.053
     # close to Arroyo_del_Ha 'unnamed13',         # : 0.052
     # close to Pinole_Creek 'Refugio_Creek',     # : 0.051
+    'SacRiver',          # : 306.644
+    'SJRiver',           # : -27.774
 ]
 
 sources_per_chunk=13
@@ -199,18 +210,18 @@ def make_call(args):
     if os.path.exists(run_dir):
         # This will probably need to get a better test, for when a run
         # failed.
-        log.info(f"Second check - directory exists {run_dir}, will skip")
+        print(f"Second check - directory exists {run_dir}, will skip")
         return
     # I'm getting a surprising number of crashes where it gets past
     # the above check, past clean, and in cfg.write() it somehow fails.
-    log.debug(f"Preemptively creating run directory {run_dir}")
+    print(f"Preemptively creating run directory {run_dir}")
     try:
         os.makedirs(run_dir)
     except FileExistsError:
         now=time.time()
-        log.warning(f"Very strange. {now-t} seconds ago tested for {run_dir} and it did not exist")
-        log.warning(f"Then makedirs failed, and now does it exist? {os.path.exists(run_dir)}")
-        log.warning("Bailing on this one, but it's weird.")
+        print(f"Very strange. {now-t} seconds ago tested for {run_dir} and it did not exist")
+        print(f"Then makedirs failed, and now does it exist? {os.path.exists(run_dir)}")
+        print("Bailing on this one, but it's weird.")
         return
 
     cfg.clean()
@@ -220,6 +231,13 @@ def make_call(args):
     cfg.execute()
 
 if __name__=='__main__':
+    if 1: # farm
+        hydro_root="/home/rustyh/src/sfb_ocean/suntans/runs"
+        ptm_root="/home/rustyh/src/sfb_ocean/ptm"
+    else:
+        hydro_root="/opt2/sfb_ocean/suntans/runs"
+        ptm_root="/opt2/sfb_ocean/ptm/"
+        
     import argparse
     parser = argparse.ArgumentParser(description='Check existing PTM runs and run remaining.')
 
@@ -229,7 +247,7 @@ if __name__=='__main__':
                         action='store_true')
     args=parser.parse_args()
 
-    ptm_avgs=glob.glob("/home/rustyh/src/sfb_ocean/suntans/runs/merged_022_*/ptm_average.nc_0000.nc")
+    ptm_avgs=glob.glob(os.path.join(hydro_root,"merged_022_*/ptm_average.nc_0000.nc"))
     ptm_avgs.sort()
 
     model_dirs=[os.path.dirname(fn) for fn in ptm_avgs]
@@ -241,12 +259,15 @@ if __name__=='__main__':
 
     models_start_time=sun_driver.SuntansModel.load(model_dirs[0]).run_start
 
-    log.info(f"{len(model_dirs)} model directories, spanning {models_start_time} to {models_end_time}")
+    print(f"{len(model_dirs)} model directories, spanning {models_start_time} to {models_end_time}")
 
+    max_duration=np.timedelta64(70,'D')
     for rel_time in rel_times:
-        end_time=rel_time + np.timedelta64(30,'D')
+        end_time=rel_time + max_duration
         assert rel_time >= models_start_time,"Set of model data starts after release time"
-        assert end_time < models_end_time,"Set of model data ends before end_time"
+        if end_time>models_end_time:
+            log.warning(f"Release time {rel_time} cannot run for full duration, hydro ends {models_end_time}")
+        #assert end_time < models_end_time,"Set of model data ends before end_time"
 
     # list of dicts for individual PTM calls.
     calls=[]
@@ -262,21 +283,21 @@ if __name__=='__main__':
             # 021c => longer simulations
             # 021d => fixed (hopefully) ptm average output
             # 022a => farm hydro
-            run_dir=f"/home/rustyh/src/sfb_ocean/ptm/all_source_022a/{chunk_name}/{date_name}"
+            # 022b => no kill at flow boundaries, include Delta, too.                       
+            run_dir=os.path.join(ptm_root,f"all_source_022b/{chunk_name}/{date_name}")
             if os.path.exists(run_dir):
                 pc=ptm_config.PtmConfig.load(run_dir)
-                if not pc.is_complete(groups='first'):
-                    # would like to record start, progress, and end. Currently
-                    # ptm_config does not read in start times, so don't worry
-                    # about it.
-                    incompletes.append( [run_dir,(pc.first_output,pc.last_output,pc.end_time)] )
-                log.debug(f"Directory exists {run_dir}, will skip")
+                if not pc.is_complete(tol=np.timedelta64(1,'h')):
+                    # Short run seem to be missing the last output step.
+                    incompletes.append(run_dir)
+                print(f"Directory exists {run_dir}, will skip")
                 continue
 
             call=dict(model_dir=model_dirs[-1],
                       rel_times=[rel_time],
                       rel_duration=np.timedelta64(10,'D'),
-                      end_time=rel_time+np.timedelta64(70,'D'),
+                      # Allow short runs
+                      end_time=min(rel_time+max_duration,models_end_time-np.timedelta64(2*3600,'s')),
                       run_dir=run_dir,
                       model=model,
                       rising_speeds_mps=rising_speeds,
@@ -292,14 +313,9 @@ if __name__=='__main__':
             
     if incompletes:
         # this will pick up on ongoing runs, too.
-        print("Runs that are present but incomplete or underway:")
-        for r,(t0,tn,t_end) in incompletes:
-            try:
-                dt0,dtn,dt_end=[utils.to_dnum(x) for x in [t0,tn,t_end]]
-                pct=100*(dtn-dt0)/(dt_end-dt0)
-            except (ValueError, TypeError):
-                pct=-1
-            print(f"   {r}: {pct:6.1f}% {t0} -- {tn} -- {t_end}")
+        print("Runs that are present but appear incomplete.  Fix code or remove directory")
+        for r in incompletes:
+            print(f"  {r}")
         if not args.dry_run:
             print("Waiting 10 seconds")
             time.sleep(10)
